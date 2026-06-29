@@ -1,0 +1,76 @@
+﻿
+D:\klm\clinic-ai-assistant\frontend\app\dashboard\analytics\page.tsx
+   5:5   warning  'MessageSquare' is defined but never used  @typescript-eslint/no-unused-vars
+  15:40  error    Unexpected any. Specify a different type   @typescript-eslint/no-explicit-any
+  16:38  error    Unexpected any. Specify a different type   @typescript-eslint/no-explicit-any
+  17:46  error    Unexpected any. Specify a different type   @typescript-eslint/no-explicit-any
+  18:46  error    Unexpected any. Specify a different type   @typescript-eslint/no-explicit-any
+  32:30  error    Unexpected any. Specify a different type   @typescript-eslint/no-explicit-any
+
+D:\klm\clinic-ai-assistant\frontend\app\forgot-password\page.tsx
+  31:18  warning  'err' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\klm\clinic-ai-assistant\frontend\app\page.tsx
+    8:3   warning  'Building2' is defined but never used         @typescript-eslint/no-unused-vars
+    9:3   warning  'ShieldCheck' is defined but never used       @typescript-eslint/no-unused-vars
+    9:28  warning  'Zap' is defined but never used               @typescript-eslint/no-unused-vars
+   11:15  warning  'Star' is defined but never used              @typescript-eslint/no-unused-vars
+   11:21  warning  'Phone' is defined but never used             @typescript-eslint/no-unused-vars
+   11:34  warning  'MapPin' is defined but never used            @typescript-eslint/no-unused-vars
+   12:8   warning  'HeartPulse' is defined but never used        @typescript-eslint/no-unused-vars
+   12:37  warning  'Workflow' is defined but never used          @typescript-eslint/no-unused-vars
+   12:47  warning  'Shield' is defined but never used            @typescript-eslint/no-unused-vars
+   13:3   warning  'Globe' is defined but never used             @typescript-eslint/no-unused-vars
+   13:33  warning  'FileText' is defined but never used          @typescript-eslint/no-unused-vars
+   13:43  warning  'Share2' is defined but never used            @typescript-eslint/no-unused-vars
+   14:3   warning  'ChevronRight' is defined but never used      @typescript-eslint/no-unused-vars
+   14:17  warning  'ExternalLink' is defined but never used      @typescript-eslint/no-unused-vars
+   15:3   warning  'Stethoscope' is defined but never used       @typescript-eslint/no-unused-vars
+   15:16  warning  'Microscope' is defined but never used        @typescript-eslint/no-unused-vars
+   15:28  warning  'Search' is defined but never used            @typescript-eslint/no-unused-vars
+   81:21  warning  'number' is defined but never used            @typescript-eslint/no-unused-vars
+   81:56  error    Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+  102:9   warning  'opacity' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+D:\klm\clinic-ai-assistant\frontend\app\patient\dashboard\page.tsx
+    5:28  warning  'Bell' is defined but never used                  @typescript-eslint/no-unused-vars
+    5:34  warning  'Clock' is defined but never used                 @typescript-eslint/no-unused-vars
+    6:3   warning  'CheckCircle2' is defined but never used          @typescript-eslint/no-unused-vars
+    6:23  warning  'ArrowUpRight' is defined but never used          @typescript-eslint/no-unused-vars
+    7:19  warning  'Heart' is defined but never used                 @typescript-eslint/no-unused-vars
+    8:18  warning  'Phone' is defined but never used                 @typescript-eslint/no-unused-vars
+    8:25  warning  'Mail' is defined but never used                  @typescript-eslint/no-unused-vars
+   14:10  warning  'formatDate' is defined but never used            @typescript-eslint/no-unused-vars
+   20:3   warning  'BarChart' is defined but never used              @typescript-eslint/no-unused-vars
+   20:13  warning  'Bar' is defined but never used                   @typescript-eslint/no-unused-vars
+   60:9   warning  'recentConvs' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  223:36  warning  'i' is defined but never used                     @typescript-eslint/no-unused-vars
+
+D:\klm\clinic-ai-assistant\frontend\app\register\page.tsx
+  146:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+D:\klm\clinic-ai-assistant\frontend\app\terms\page.tsx
+  46:61   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  46:67   error  `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  46:167  error  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`  react/no-unescaped-entities
+
+D:\klm\clinic-ai-assistant\frontend\components\patient\MedicationSection.tsx
+    4:51  warning  'Edit3' is defined but never used             @typescript-eslint/no-unused-vars
+    4:58  warning  'AlertCircle' is defined but never used       @typescript-eslint/no-unused-vars
+   16:12  warning  'loading' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  186:23  error    Unexpected any. Specify a different type      @typescript-eslint/no-explicit-any
+
+D:\klm\clinic-ai-assistant\frontend\components\providers\NotificationToastProvider.tsx
+  5:46  warning  'Calendar' is defined but never used  @typescript-eslint/no-unused-vars
+
+D:\klm\clinic-ai-assistant\frontend\contexts\AuthContext.tsx
+  126:5  warning  React Hook useCallback has a missing dependency: 'router'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\klm\clinic-ai-assistant\frontend\hooks\useRealtime.ts
+   5:21  warning  'useCallback' is defined but never used   @typescript-eslint/no-unused-vars
+  14:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  42:17  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+Γ£û 52 problems (13 errors, 39 warnings)
+
+

@@ -1,0 +1,33 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+email-validator==2.2.0
+
+# LLM / AI
+langchain-core==0.3.29
+langchain-groq==0.2.3
+langgraph==0.2.60
+
+# Supabase
+supabase==2.10.0
+
+# Twilio (WhatsApp webhooks)
+twilio==9.4.4
+
+# Gmail email (IMAP inbound + Google API outbound)
+imapclient==3.0.1
+pyzmail36==1.0.5
+google-api-python-client==2.112.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+apscheduler==3.10.4
+tenacity==9.0.0
+
+# HTTP / forms
+python-multipart==0.0.20
+PyJWT==2.10.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.2
