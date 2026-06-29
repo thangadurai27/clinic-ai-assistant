@@ -487,7 +487,7 @@ export default function ReceptionistDashboardPage() {
                   fontWeight: 600,
                   color: "#ffffff",
                   margin: 0
-                }}>Today's Appointments</h3>
+                }}>Today&apos;s Appointments</h3>
                 <div style={{ fontSize: "11px", color: "#94a3b8" }}>All</div>
               </div>
               
@@ -613,7 +613,7 @@ export default function ReceptionistDashboardPage() {
                       whiteSpace: "nowrap",
                       overflow: "hidden",
                       textOverflow: "ellipsis"
-                    }}>Hi I'm having a symptoms of fever what should I do?</p>
+                    }}>Hi I&apos;m having a symptoms of fever what should I do?</p>
                     <p style={{ fontSize: "10px", color: "#64748b", margin: 0, marginTop: "4px" }}>21 minutes ago</p>
                   </div>
                   <div style={{
