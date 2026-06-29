@@ -2,7 +2,8 @@
 import { useState } from "react";
 import {
   PhoneCall, Activity,
-  AlertTriangle, Clock, Inbox, ArrowUpRight
+  AlertTriangle, Clock, Inbox, ArrowUpRight,
+  MessageCircle, Mail
 } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
 import { api } from "@/services/api";
@@ -19,11 +20,9 @@ import Link from "next/link";
 const AV = ["#14b8a6", "#6366f1", "#22c55e", "#f59e0b", "#8b5cf6", "#3b82f6", "#ef4444", "#ec4899"];
 const av = (s: string) => AV[(s.charCodeAt(0) || 0) % AV.length];
 
-
 export default function ReceptionistDashboardPage() {
   const [activeTab, setActiveTab] = useState("All");
 
-  // Use TanStack Query hooks
   const { data: stats, isLoading: statsLoading } = useDashboardStats();
   const { data: convs, isLoading: convsLoading } = useConversations();
   const { data: escs, isLoading: escsLoading } = useEscalations();
@@ -31,11 +30,9 @@ export default function ReceptionistDashboardPage() {
 
   const loading = statsLoading || convsLoading || escsLoading || apptsLoading;
 
-  // Process data
   const conversations = (convs as Conversation[] | undefined || []).slice(0, 8);
   const openEscalations = (escs as Escalation[] | undefined || []).filter(x => x.status === "open").slice(0, 5);
   
-  // Today's appointments
   const today = new Date().toISOString().split("T")[0];
   const todayAppointments = (appts as Appointment[] | undefined || []).filter(
     (ap) => ap.date?.startsWith(today) || ap.slot_start?.startsWith(today)
@@ -50,36 +47,28 @@ export default function ReceptionistDashboardPage() {
       label: "Active Conversations", 
       value: (stats as DashboardStats)?.active_conversations ?? conversations.length, 
       icon: Activity, 
-      accent: "text-emerald-400", 
-      bgAccent: "bg-emerald-500/15",
-      borderAccent: "border-emerald-500/40",
+      color: "#10b981",
       href: "/dashboard/conversations" 
     },
     { 
       label: "Human Takeovers", 
       value: humanConvs.length, 
       icon: PhoneCall, 
-      accent: "text-sky-400", 
-      bgAccent: "bg-sky-500/15",
-      borderAccent: "border-sky-500/40",
+      color: "#3b82f6",
       href: "/dashboard/conversations" 
     },
     { 
       label: "Today's Appointments", 
       value: todayAppointments.length, 
       icon: Clock, 
-      accent: "text-teal-400", 
-      bgAccent: "bg-teal-500/15",
-      borderAccent: "border-teal-500/40",
+      color: "#06b6d4",
       href: "/dashboard/appointments" 
     },
     { 
       label: "Open Escalations", 
       value: (stats as DashboardStats)?.open_escalations ?? openEscalations.length, 
       icon: Activity, 
-      accent: "text-orange-400", 
-      bgAccent: "bg-orange-500/15",
-      borderAccent: "border-orange-500/40",
+      color: "#f97316",
       href: "/dashboard/escalations" 
     },
   ];
@@ -92,76 +81,179 @@ export default function ReceptionistDashboardPage() {
   ];
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-[#050816]">
+    <div style={{
+      display: "flex",
+      flexDirection: "column",
+      height: "100%",
+      overflow: "hidden",
+      background: "linear-gradient(135deg, #050816 0%, #0a0f1e 100%)"
+    }}>
       <TopNav title="Reception Dashboard" subtitle="Front Desk Overview" loading={loading} />
 
-      <div className="flex-1 overflow-y-auto overflow-x-hidden p-6">
+      <div style={{
+        flex: 1,
+        overflowY: "auto",
+        overflowX: "hidden",
+        padding: "20px 24px",
+      }}>
         
         {/* KPI Cards Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: "16px",
+          marginBottom: "20px"
+        }}>
           {kpis.map((k, idx) => {
             const Icon = k.icon;
             return (
-              <Link key={idx} href={k.href} className="no-underline">
-                <div className="group relative overflow-hidden rounded-2xl border border-white/5 bg-gradient-to-br from-[#0E1628]/80 to-[#0A1020] p-5 transition-all duration-300 hover:border-[#5B7CFF]/50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-400 font-medium mb-1">{k.label}</p>
-                      <p className="text-5xl font-bold text-white leading-tight">
-                        {loading ? "—" : k.value}
-                      </p>
-                    </div>
-                    <div className={`flex h-12 w-12 items-center justify-center rounded-xl ${k.bgAccent} border border-white/10`}>
-                      <Icon className={`h-6 w-6 ${k.accent}`} strokeWidth={1.75} />
+              <Link key={idx} href={k.href} style={{ textDecoration: "none" }}>
+                <div style={{
+                  background: "rgba(255,255,255,0.03)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "16px",
+                  padding: "20px",
+                  position: "relative",
+                  overflow: "hidden",
+                  transition: "all 0.2s ease",
+                  cursor: "pointer"
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = `${k.color}40`;
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}>
+                  <div style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    justifyContent: "space-between",
+                    marginBottom: "12px"
+                  }}>
+                    <div style={{
+                      width: "44px",
+                      height: "44px",
+                      borderRadius: "12px",
+                      background: `${k.color}15`,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: `1px solid ${k.color}30`
+                    }}>
+                      <Icon size={20} color={k.color} />
                     </div>
                   </div>
+                  <p style={{
+                    fontSize: "13px",
+                    color: "#94a3b8",
+                    fontWeight: 500,
+                    marginBottom: "4px"
+                  }}>{k.label}</p>
+                  <h2 style={{
+                    fontSize: "36px",
+                    fontWeight: 700,
+                    color: "#ffffff",
+                    margin: 0,
+                    lineHeight: 1
+                  }}>
+                    {loading ? "—" : k.value}
+                  </h2>
                 </div>
               </Link>
             );
           })}
         </div>
 
-        {/* Main Grid: 2 columns on lg, 1 on smaller */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Grid */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1.5fr 1fr",
+          gap: "16px"
+        }}>
           
-          {/* Left Column: Live Conversations */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="rounded-2xl border border-white/5 bg-gradient-to-br from-[#0E1628]/90 via-[#0C1424] to-[#09101D] p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-white">Live Conversations</h3>
-                <button 
-                  onClick={() => {}}
-                  className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
-                >
-                  View all <ArrowUpRight className="w-3 h-3" />
-                </button>
+          {/* Left Column */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            
+            {/* Live Conversations */}
+            <div style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "16px",
+              padding: "20px"
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "16px"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <h3 style={{
+                    fontSize: "16px",
+                    fontWeight: 600,
+                    color: "#ffffff",
+                    margin: 0
+                  }}>Live Conversations</h3>
+                </div>
+                <Link href="/dashboard/conversations" style={{
+                  fontSize: "12px",
+                  color: "#3b82f6",
+                  textDecoration: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "4px"
+                }}>
+                  View all <ArrowUpRight size={12} />
+                </Link>
               </div>
 
               {/* Tabs */}
-              <div className="flex gap-2 mb-4">
+              <div style={{
+                display: "flex",
+                gap: "8px",
+                marginBottom: "16px",
+                flexWrap: "wrap"
+              }}>
                 {tabs.map(t => (
                   <button
                     key={t.name}
                     onClick={() => setActiveTab(t.name)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${
-                      activeTab === t.name
-                        ? "bg-blue-500/20 text-blue-300 border border-blue-500/40"
-                        : "bg-white/5 text-gray-400 border border-white/10 hover:bg-white/10"
-                    }`}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      transition: "all 0.2s",
+                      background: activeTab === t.name ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.03)",
+                      color: activeTab === t.name ? "#3b82f6" : "#94a3b8",
+                      border: activeTab === t.name ? "1px solid rgba(59,130,246,0.3)" : "1px solid rgba(255,255,255,0.1)",
+                      cursor: "pointer"
+                    }}
                   >
-                    {t.name} {t.count > 0 && <span className="ml-1 opacity-80">({t.count})</span>}
+                    {t.name} {t.count > 0 && <span style={{ marginLeft: "4px" }}>({t.count})</span>}
                   </button>
                 ))}
               </div>
 
               {/* Conversations List */}
-              <div className="space-y-3">
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {loading ? (
                     Array(4).fill(0).map((_, i) => (
-                      <div key={i} className="skeleton h-20 rounded-xl" />
+                      <div key={i} style={{
+                        height: "72px",
+                        background: "rgba(255,255,255,0.03)",
+                        borderRadius: "12px",
+                        animation: "pulse 2s infinite"
+                      }} />
                     ))
                   ) : conversations.length === 0 ? (
-                    <div className="py-10 text-center text-gray-500">No active conversations</div>
+                    <div style={{
+                      padding: "40px",
+                      textAlign: "center",
+                      color: "#64748b"
+                    }}>No active conversations</div>
                   ) : (
                     conversations.slice(0, 6).map((c) => {
                       const name = c.patients?.name ?? "Unknown";
@@ -173,40 +265,107 @@ export default function ReceptionistDashboardPage() {
                         <Link 
                           key={c.id} 
                           href={`/dashboard/conversations?id=${c.id}`}
-                          className="group"
+                          style={{ textDecoration: "none" }}
                         >
-                          <div className="flex items-center gap-4 rounded-xl border border-white/5 bg-[#0B1220] p-4 transition-all hover:border-[#5B7CFF]/40 hover:bg-[#0E1830]">
+                          <div style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "12px",
+                            padding: "12px",
+                            borderRadius: "12px",
+                            background: "rgba(255,255,255,0.02)",
+                            border: "1px solid rgba(255,255,255,0.08)",
+                            transition: "all 0.2s",
+                            cursor: "pointer"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                            e.currentTarget.style.borderColor = "rgba(59,130,246,0.2)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+                            e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)";
+                          }}>
                             {/* Avatar */}
-                            <div className="relative flex-shrink-0">
-                              <div 
-                                className="flex h-12 w-12 items-center justify-center rounded-full text-sm font-bold text-white"
-                                style={{ background: color }}
-                              >
+                            <div style={{ position: "relative", flexShrink: 0 }}>
+                              <div style={{
+                                width: "44px",
+                                height: "44px",
+                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: "14px",
+                                fontWeight: 700,
+                                color: "#ffffff",
+                                background: color
+                              }}>
                                 {init}
                               </div>
-                              <div className="absolute -right-0.5 -bottom-0.5 h-3.5 w-3.5 rounded-full border-2 border-[#0B1220] bg-emerald-500" />
+                              <div style={{
+                                position: "absolute",
+                                right: "-2px",
+                                bottom: "-2px",
+                                width: "12px",
+                                height: "12px",
+                                borderRadius: "50%",
+                                border: "2px solid #050816",
+                                background: "#22c55e"
+                              }} />
                             </div>
 
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between">
-                                <h4 className="font-medium text-white text-sm">{name}</h4>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-[10px] text-gray-500">
-                                    {c.channel === "email" ? "email" : "whatsapp"}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                                marginBottom: "4px"
+                              }}>
+                                <h4 style={{
+                                  fontSize: "13px",
+                                  fontWeight: 600,
+                                  color: "#ffffff",
+                                  margin: 0
+                                }}>{name}</h4>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <span style={{
+                                    fontSize: "10px",
+                                    color: "#64748b"
+                                  }}>
+                                    {c.channel === "email" ? (
+                                      <><Mail size={10} style={{ marginRight: "4px" }} /> email</>
+                                    ) : (
+                                      <><MessageCircle size={10} style={{ marginRight: "4px" }} /> whatsapp</>
+                                    )}
                                   </span>
-                                  <span className="text-[10px] text-gray-500">
-                                    · {timeAgo(c.created_at)}
+                                  <span style={{
+                                    fontSize: "10px",
+                                    color: "#64748b"
+                                  }}>
+                                    • {timeAgo(c.created_at)}
                                   </span>
                                 </div>
                               </div>
-                              <p className="text-xs text-gray-400 truncate">{lastMessage}</p>
+                              <p style={{
+                                fontSize: "11px",
+                                color: "#94a3b8",
+                                margin: 0,
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis"
+                              }}>{lastMessage}</p>
                             </div>
                             
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase ${
-                              isHuman 
-                                ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" 
-                                : "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                            }`}>
+                            <span style={{
+                              padding: "4px 8px",
+                              borderRadius: "6px",
+                              fontSize: "10px",
+                              fontWeight: 600,
+                              textTransform: "uppercase",
+                              background: isHuman ? "rgba(245,158,11,0.15)" : "rgba(34,197,94,0.15)",
+                              color: isHuman ? "#f59e0b" : "#22c55e",
+                              border: isHuman ? "1px solid rgba(245,158,11,0.3)" : "1px solid rgba(34,197,94,0.3)"
+                            }}>
                               {isHuman ? "Human" : "AI Active"}
                             </span>
                           </div>
@@ -218,76 +377,176 @@ export default function ReceptionistDashboardPage() {
             </div>
           </div>
 
-          {/* Right Column: Emergency Alerts & Appointments */}
-          <div className="space-y-6">
+          {/* Right Column */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             
             {/* Emergency Alerts */}
-            <div className="rounded-2xl border border-red-500/30 bg-gradient-to-br from-[#150B0B]/90 to-[#09101D] p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5 text-red-400" />
-                  <h3 className="text-base font-semibold text-white">Emergency Alerts</h3>
+            <div style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(239,68,68,0.3)",
+              borderRadius: "16px",
+              padding: "20px"
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "16px"
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <AlertTriangle size={18} color="#ef4444" />
+                  <h3 style={{
+                    fontSize: "15px",
+                    fontWeight: 600,
+                    color: "#ffffff",
+                    margin: 0
+                  }}>Emergency Alerts</h3>
                 </div>
-                <span className="text-xs font-bold bg-red-500 text-white px-2 py-1 rounded-md">
+                <span style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  background: "#ef4444",
+                  color: "#ffffff",
+                  padding: "4px 8px",
+                  borderRadius: "6px"
+                }}>
                   {openEscalations.length} Open
                 </span>
               </div>
 
-              <div className="space-y-3">
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {loading ? (
                     Array(3).fill(0).map((_,i) => (
-                      <div key={i} className="skeleton h-16 rounded-xl" />
+                      <div key={i} style={{
+                        height: "56px",
+                        background: "rgba(255,255,255,0.03)",
+                        borderRadius: "12px"
+                      }} />
                     ))
                   ) : openEscalations.length > 0 ? openEscalations.slice(0,3).map(esc => {
                     return (
-                    <div key={esc.id} className="flex items-center justify-between rounded-xl bg-[#0B1220] border border-white/5 p-3">
-                      <div className="flex items-center gap-3">
-                        <span className="font-medium text-white text-sm">{esc.patients?.name || "Patient"}</span>
+                    <div key={esc.id} style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "10px",
+                      borderRadius: "12px",
+                      background: "rgba(239,68,68,0.05)",
+                      border: "1px solid rgba(239,68,68,0.15)"
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#ffffff",
+                          display: "block"
+                        }}>{esc.patients?.name || "Patient"}</span>
+                        <span style={{
+                          fontSize: "10px",
+                          color: "#94a3b8"
+                        }}>
+                          low_confidence {(esc.metadata?.confidence as number || 0.2).toFixed(2)}
+                        </span>
                       </div>
-                      <span className="text-xs text-gray-500">
-                        low_confidence {(esc.metadata?.confidence as number || 0.2).toFixed(2)}
-                      </span>
-                      <span className="text-xs font-bold bg-amber-500/20 text-amber-300 px-2 py-1 rounded">
+                      <span style={{
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        background: "rgba(245,158,11,0.15)",
+                        color: "#f59e0b",
+                        padding: "4px 8px",
+                        borderRadius: "6px"
+                      }}>
                         LOW
                       </span>
                     </div>
                   )}) : (
-                    <div className="py-8 text-center text-gray-500">No alerts</div>
+                    <div style={{
+                      padding: "32px",
+                      textAlign: "center",
+                      color: "#64748b"
+                    }}>No alerts</div>
                   )}
               </div>
             </div>
 
             {/* Today's Appointments */}
-            <div className="rounded-2xl border border-white/5 bg-gradient-to-br from-[#0E1628]/90 to-[#09101D] p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-semibold text-white">Today&apos;s Appointments</h3>
-                <Link href="/dashboard/appointments" className="text-xs text-blue-400 hover:text-blue-300">
-                  All
-                </Link>
+            <div style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "16px",
+              padding: "20px"
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "16px"
+              }}>
+                <h3 style={{
+                  fontSize: "15px",
+                  fontWeight: 600,
+                  color: "#ffffff",
+                  margin: 0
+                }}>Today's Appointments</h3>
+                <div style={{ fontSize: "11px", color: "#94a3b8" }}>All</div>
               </div>
               
               {loading ? (
-                  <div className="space-y-2">
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                       {Array(3).fill(0).map((_,i) => (
-                        <div key={i} className="skeleton h-14 rounded-xl" />
+                        <div key={i} style={{
+                          height: "48px",
+                          background: "rgba(255,255,255,0.03)",
+                          borderRadius: "12px"
+                        }} />
                       ))}
                   </div>
                 ) : todayAppointments.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-10 text-center text-gray-500">
-                      <Clock className="h-10 w-10 mb-3 opacity-30" />
-                      <p className="text-sm">No appointments today</p>
+                  <div style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: "40px",
+                    textAlign: "center",
+                    color: "#64748b"
+                  }}>
+                      <Clock size={32} style={{ marginBottom: "8px", opacity: 0.3 }} />
+                      <p style={{ fontSize: "12px", margin: 0 }}>No appointments today</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                       {todayAppointments.slice(0,4).map(apt => (
-                        <div key={apt.id} className="flex items-center justify-between rounded-xl border border-white/5 bg-[#0B1220] p-3 hover:bg-[#0E1830]">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/5 border border-white/5 text-xs font-bold text-cyan-300">
-                              {apt.patients?.name?.[0] || "P"}
-                            </div>
-                            <div>
-                              <p className="font-medium text-white text-xs">{apt.patients?.name || "Patient"}</p>
-                            </div>
+                        <div key={apt.id} style={{
+                          display: "flex",
+                          alignItems: "center",
+                          padding: "10px",
+                          borderRadius: "12px",
+                          background: "rgba(255,255,255,0.02)",
+                          border: "1px solid rgba(255,255,255,0.08)"
+                        }}>
+                          <div style={{
+                            width: "36px",
+                            height: "36px",
+                            borderRadius: "50%",
+                            background: "rgba(255,255,255,0.05)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "12px",
+                            fontWeight: 700,
+                            color: "#06b6d4",
+                            marginRight: "10px"
+                          }}>
+                            {apt.patients?.name?.[0] || "P"}
+                          </div>
+                          <div>
+                            <p style={{
+                              fontSize: "12px",
+                              fontWeight: 600,
+                              color: "#ffffff",
+                              margin: 0
+                            }}>{apt.patients?.name || "Patient"}</p>
                           </div>
                         </div>
                       ))}
@@ -296,34 +555,110 @@ export default function ReceptionistDashboardPage() {
             </div>
 
             {/* Notifications */}
-            <div className="rounded-2xl border border-white/5 bg-gradient-to-br from-[#0E1628]/90 to-[#09101D] p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-base font-semibold text-white">Notifications</h3>
+            <div style={{
+              background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "16px",
+              padding: "20px"
+            }}>
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: "16px"
+              }}>
+                <h3 style={{
+                  fontSize: "15px",
+                  fontWeight: 600,
+                  color: "#ffffff",
+                  margin: 0
+                }}>Notifications</h3>
                 <button 
                   onClick={() => api.markAllNotificationsRead()}
-                  className="text-xs text-blue-400 hover:text-blue-300"
+                  style={{
+                    fontSize: "11px",
+                    color: "#3b82f6",
+                    background: "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    padding: 0
+                  }}
                 >
                   Mark all read
                 </button>
               </div>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3 rounded-xl bg-[#0B1220] border border-white/5 p-3">
-                  <Inbox className="h-5 w-5 text-emerald-400" />
-                  <div className="flex-1">
-                    <p className="text-xs text-white">WhatsApp from Patient</p>
-                    <p className="text-[10px] text-gray-500">Hi I&apos;m having a symptoms of fever what should I do?</p>
-                    <p className="text-[10px] text-gray-500">21 minutes ago</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <div style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  padding: "10px",
+                  borderRadius: "12px",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(255,255,255,0.08)"
+                }}>
+                  <Inbox size={16} color="#22c55e" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: "#ffffff",
+                      margin: 0,
+                      marginBottom: "2px"
+                    }}>WhatsApp from Patient</p>
+                    <p style={{
+                      fontSize: "10px",
+                      color: "#94a3b8",
+                      margin: 0,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis"
+                    }}>Hi I'm having a symptoms of fever what should I do?</p>
+                    <p style={{ fontSize: "10px", color: "#64748b", margin: 0, marginTop: "4px" }}>21 minutes ago</p>
                   </div>
-                  <div className="h-2 w-2 rounded-full bg-blue-500" />
+                  <div style={{
+                    width: "6px",
+                    height: "6px",
+                    borderRadius: "50%",
+                    background: "#3b82f6",
+                    marginTop: "6px"
+                  }} />
                 </div>
-                <div className="flex items-start gap-3 rounded-xl bg-[#0B1220] border border-white/5 p-3">
-                  <Inbox className="h-5 w-5 text-blue-400" />
-                  <div className="flex-1">
-                    <p className="text-xs text-white">Email from THANGADURAI</p>
-                    <p className="text-[10px] text-gray-500">fyi -- Escalation Summary** Patient Test U...</p>
-                    <p className="text-[10px] text-gray-500">about 12 hours ago</p>
+                <div style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: "10px",
+                  padding: "10px",
+                  borderRadius: "12px",
+                  background: "rgba(255,255,255,0.02)",
+                  border: "1px solid rgba(255,255,255,0.08)"
+                }}>
+                  <Inbox size={16} color="#3b82f6" />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{
+                      fontSize: "11px",
+                      fontWeight: 600,
+                      color: "#ffffff",
+                      margin: 0,
+                      marginBottom: "2px"
+                    }}>Email from THANGADURAI</p>
+                    <p style={{
+                      fontSize: "10px",
+                      color: "#94a3b8",
+                      margin: 0,
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis"
+                    }}>fyi -- Escalation Summary** Patient Test U...</p>
+                    <p style={{ fontSize: "10px", color: "#64748b", margin: 0, marginTop: "4px" }}>about 12 hours ago</p>
                   </div>
-                  <div className="h-2 w-2 rounded-full bg-blue-500" />
+                  <div style={{
+                    width: "6px",
+                    height: "6px",
+                    borderRadius: "50%",
+                    background: "#3b82f6",
+                    marginTop: "6px"
+                  }} />
                 </div>
               </div>
             </div>
