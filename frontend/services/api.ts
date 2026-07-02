@@ -1,5 +1,6 @@
 // API client — typed fetch wrapper for the FastAPI backend
 import type { DashboardStats, Conversation, Escalation, Appointment, Patient, Notification } from "@/types";
+import { tokenManager, authAPI } from "@/lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
@@ -7,7 +8,7 @@ const MAX_RETRIES = 2;
 
 function getToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem("access_token");
+  return tokenManager.getToken();
 }
 
 function sleep(ms: number) {
@@ -27,7 +28,7 @@ async function parseError(res: Response) {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = getToken();
+  let token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
@@ -57,9 +58,32 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
     if (res.status === 401) {
       if (typeof window !== "undefined") {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
-        localStorage.removeItem("user");
+        // Try to refresh token if we have one!
+        const refreshToken = tokenManager.getRefreshToken();
+        if (refreshToken) {
+          try {
+            console.log("[Request] Trying to refresh token...");
+            const refreshResponse = await authAPI.refreshToken(refreshToken);
+            if (refreshResponse.access_token) {
+              tokenManager.setToken(refreshResponse.access_token);
+              if (refreshResponse.refresh_token) {
+                tokenManager.setRefreshToken(refreshResponse.refresh_token);
+              }
+              if (refreshResponse.user) {
+                tokenManager.setUser(refreshResponse.user);
+              }
+              // Retry the original request!
+              token = refreshResponse.access_token;
+              headers["Authorization"] = `Bearer ${token}`;
+              continue; // Retry the request!
+            }
+          } catch (refreshErr) {
+            console.error("[Request] Token refresh failed:", refreshErr);
+          }
+        }
+
+        // If we're here, either no refresh token or refresh failed
+        tokenManager.clear();
         document.cookie = "clinic_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
         window.location.href = "/login";
       }

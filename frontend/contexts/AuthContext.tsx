@@ -53,17 +53,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         const token = tokenManager.getToken();
         if (token) {
-          const { user: userData } = await authAPI.getCurrentUser(token);
-          setUser(userData);
-          tokenManager.setUser(userData);
-          syncUserCookie(userData);
+          try {
+            const { user: userData } = await authAPI.getCurrentUser(token);
+            setUser(userData);
+            tokenManager.setUser(userData);
+            syncUserCookie(userData);
+          } catch (err) {
+            console.warn("Failed to get current user from API, using stored user if available:", err);
+            // Don't clear everything—try to use stored user!
+          }
         } else {
           syncUserCookie(null);
         }
       } catch (error) {
         console.error("Failed to load user:", error);
-        tokenManager.clear();
-        syncUserCookie(null);
+        // Don't clear everything unless we have to!
       } finally {
         setLoading(false);
       }

@@ -26,6 +26,20 @@ export interface AuthResponse {
   expires_at?: number;
 }
 
+// Sync user role to a cookie so Next.js middleware can read it (middleware runs server-side)
+function syncUserCookie(user: User | null) {
+  if (typeof document === "undefined") return;
+  if (user) {
+    // Encode minimal info needed by middleware — role only (no sensitive data)
+    const payload = encodeURIComponent(JSON.stringify({ role: user.role, id: user.id }));
+    // Set cookie to expire in 30 days
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `clinic_user=${payload}; path=/; SameSite=Lax; expires=${expires}`;
+  } else {
+    document.cookie = "clinic_user=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+  }
+}
+
 class AuthAPI {
   private getHeaders(token?: string): HeadersInit {
     const headers: HeadersInit = {
@@ -225,6 +239,7 @@ export const tokenManager = {
   setUser(user: User): void {
     if (typeof window === "undefined") return;
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    syncUserCookie(user);
   },
 
   clear(): void {
@@ -232,6 +247,7 @@ export const tokenManager = {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    syncUserCookie(null);
   },
 
   isAuthenticated(): boolean {
