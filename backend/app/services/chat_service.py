@@ -274,6 +274,12 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     # Broadcast real-time update
     try:
         await manager.broadcast({
+            "type": "conversation_updated",
+            "conversation_id": str(new_conv_id) if new_conv_id else None,
+            "patient_id": patient_id_str,
+            "channel": request.channel.value,
+        })
+        await manager.broadcast({
             "type": "new_message",
             "conversation_id": str(new_conv_id) if new_conv_id else None,
             "patient_id": patient_id_str,
