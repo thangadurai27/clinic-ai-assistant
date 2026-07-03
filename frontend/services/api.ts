@@ -1,5 +1,5 @@
 // API client — typed fetch wrapper for the FastAPI backend
-import type { DashboardStats, Conversation, Escalation, Appointment, Patient, Notification } from "@/types";
+import type { DashboardStats, Conversation, Escalation, Appointment, Patient, Notification, AnalyticsData } from "@/types";
 import { tokenManager, authAPI } from "@/lib/auth";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
@@ -205,7 +205,7 @@ export const api = {
   deleteMedication: (id: string) => request(`/medications/${id}`, { method: "DELETE" }),
 
   // Analytics
-  getAnalytics: (days: number = 30) => request(`/analytics?period_days=${days}`),
+  getAnalytics: (days: number = 30) => request<AnalyticsData>(`/analytics?period_days=${days}`),
   getAnalyticsDashboard: () => request("/analytics/dashboard"),
   getAnalyticsIntents: (days: number = 30) => request(`/analytics/intents?period_days=${days}`),
   getAnalyticsPerformance: () => request("/analytics/performance"),

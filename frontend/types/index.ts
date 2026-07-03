@@ -274,6 +274,47 @@ export interface DashboardStats {
 export interface IntentDistribution { intent: string; count: number; }
 export interface DailyConversations { date: string; count: number; }
 
+export interface AccuracyTimelineItem {
+  date: string;
+  ai_handled: number;
+  escalated: number;
+}
+
+export interface AnalyticsPerformance {
+  ai_accuracy: number;
+  automation_rate: number;
+  avg_ai_response_time: number;
+  avg_resolution_time: number;
+  escalation_rate: number;
+}
+
+export interface AnalyticsChannel {
+  channel: string;
+  count: number;
+  percentage: number;
+}
+
+export interface AnalyticsMessages {
+  total_messages: number;
+  ai_responses: number;
+  patient_messages: number;
+  staff_responses: number;
+}
+
+export interface AnalyticsData {
+  total_patients: number;
+  total_appointments: number;
+  ai_resolved: number;
+  active_escalations: number;
+  accuracy_timeline: AccuracyTimelineItem[];
+  intent_distribution: IntentDistribution[];
+  top_patient_intents: IntentDistribution[];
+  performance: AnalyticsPerformance;
+  channels: AnalyticsChannel[];
+  messages: AnalyticsMessages;
+  stats: DashboardStats;
+}
+
 export interface AnalyticsResponse {
   intent_distribution: IntentDistribution[];
   daily_conversations: DailyConversations[];

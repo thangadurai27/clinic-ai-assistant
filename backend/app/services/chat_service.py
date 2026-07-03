@@ -225,6 +225,7 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                     content=response_text,
                     channel=request.channel,
                 ))
+                await conversation_repo.update_updated_at(new_conv_id)
 
             if escalated and patient_id_str:
                 await escalation_repo.create(EscalationCreate(

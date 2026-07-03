@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import type { Conversation, Escalation, Appointment, DashboardStats } from '@/types';
+import type { Conversation, Escalation, Appointment, DashboardStats, AnalyticsData } from '@/types';
 
 export function useDashboardStats() {
   return useQuery<DashboardStats>({
@@ -45,7 +45,7 @@ export function useNotifications(limit?: number) {
 }
 
 export function useAnalytics(periodDays: number = 30) {
-  return useQuery({
+  return useQuery<AnalyticsData>({
     queryKey: ['analytics', periodDays],
     queryFn: () => api.getAnalytics(periodDays),
   });

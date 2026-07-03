@@ -118,6 +118,14 @@ class ConversationRepository:
         )
         return res.data[0] if res.data else {}
 
+    async def update_updated_at(self, conv_id: str) -> dict:
+        from datetime import datetime
+        update_data: dict = {"updated_at": datetime.utcnow().isoformat()}
+        res = await run_blocking(
+            lambda: _db().table(self.TABLE).update(update_data).eq("id", conv_id).execute()
+        )
+        return res.data[0] if res.data else {}
+
     async def count_active(self) -> int:
         res = await run_blocking(
             lambda: _db().table(self.TABLE).select("id", count="exact").eq("status", "open").execute()
