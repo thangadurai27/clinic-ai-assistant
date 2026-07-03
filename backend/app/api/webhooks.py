@@ -16,6 +16,7 @@ from app.config.settings import settings
 from app.repositories import notification_repo, timeline_repo, conversation_repo
 from app.schemas import ChannelType, ChatRequest, NotificationType
 from app.services.chat_service import handle_chat
+from app.utils.websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])

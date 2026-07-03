@@ -160,6 +160,7 @@ class MessageCreate(BaseModel):
     conversation_id: UUID
     sender: MessageSender
     content: str = Field(..., min_length=1)
+    channel: ChannelType = ChannelType.WEB
 
 
 class MessageRead(MessageCreate):

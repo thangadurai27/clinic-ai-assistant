@@ -36,6 +36,7 @@ from app.schemas import (
     AILogCreate,
     ActivityLogCreate,
 )
+from app.utils.websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 
@@ -216,11 +217,13 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                     conversation_id=conv_uuid,
                     sender=MessageSender.PATIENT,
                     content=request.message,
+                    channel=request.channel,
                 ))
                 await message_repo.create(MessageCreate(
                     conversation_id=conv_uuid,
                     sender=MessageSender.AI,
                     content=response_text,
+                    channel=request.channel,
                 ))
 
             if escalated and patient_id_str:
@@ -266,6 +269,17 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
         ))
     except Exception:
         pass
+
+    # Broadcast real-time update
+    try:
+        await manager.broadcast({
+            "type": "new_message",
+            "conversation_id": str(new_conv_id) if new_conv_id else None,
+            "patient_id": patient_id_str,
+            "channel": request.channel.value,
+        })
+    except Exception as e:
+        logger.error(f"Failed to broadcast websocket event: {e}")
 
     return ChatResponse(
         message=response_text,

@@ -29,6 +29,7 @@ export interface Message {
   conversation_id: string;
   sender: MessageSender;
   content: string;
+  channel: ChannelType;
   timestamp: string;
   status?: "sent" | "delivered" | "read" | "failed";
   delivery_status?: string;

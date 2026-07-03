@@ -64,6 +64,7 @@ export default function PatientMessagesPage() {
       sender: "patient",
       content: text,
       timestamp: new Date().toISOString(),
+      channel: "web",
     }]);
 
     try {

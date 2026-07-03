@@ -132,17 +132,20 @@ export default function ConversationsPage() {
         setMessages(prev => [...prev, {
           id: `s-${Date.now()}`, conversation_id: selected.id,
           sender: "staff", content: text, timestamp: new Date().toISOString(),
+          channel: selected.channel || "web",
         }]);
       } else {
         // Simulate chat via AI
         setMessages(prev => [...prev, {
           id: `p-${Date.now()}`, conversation_id: selected.id,
           sender: "patient", content: text, timestamp: new Date().toISOString(),
+          channel: selected.channel || "web",
         }]);
         const r = await api.chat({ message: text, channel: selected.channel, patient_id: selected.patient_id, conversation_id: selected.id }) as ChatResponse;
         setMessages(prev => [...prev, {
           id: `ai-${Date.now()}`, conversation_id: selected.id,
           sender: "ai", content: r.message, timestamp: new Date().toISOString(),
+          channel: selected.channel || "web",
         }]);
       }
     } catch { toast.error("Failed to send message"); }

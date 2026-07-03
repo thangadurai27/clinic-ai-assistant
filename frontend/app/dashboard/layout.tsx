@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWebSocket } from "@/hooks/useWebSocket";
 
 const Sidebar = dynamic(() => import("@/components/layout/Sidebar"), {
   ssr: false,
@@ -14,6 +15,7 @@ const Sidebar = dynamic(() => import("@/components/layout/Sidebar"), {
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  useWebSocket();
 
   useEffect(() => {
     if (loading) return;
