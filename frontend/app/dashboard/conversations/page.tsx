@@ -6,8 +6,8 @@ import {
 } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
 import { api } from "@/services/api";
-import { useRealtime } from "@/hooks/useRealtime";
-import { useMountFetch } from "@/hooks/useMountFetch";
+import { useConversations } from "@/hooks/useDashboard";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ChatResponse, Conversation, ConversationTimelineEvent, Message } from "@/types";
 import { intentLabel, timeAgo, getInitials, formatTime } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
@@ -31,11 +31,10 @@ const TABS = ["All", "Open", "Escalated", "Closed"] as const;
 
 export default function ConversationsPage() {
   const { user } = useAuth();
-  const [convs,    setConvs]    = useState<Conversation[]>([]);
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [timeline, setTimeline] = useState<ConversationTimelineEvent[]>([]);
-  const [loading,  setLoading]  = useState(true);
   const [msgLoad,  setMsgLoad]  = useState(false);
   const [filter,   setFilter]   = useState("All");
   const [input,    setInput]    = useState("");
@@ -43,19 +42,9 @@ export default function ConversationsPage() {
   const [actLoading, setActLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const f = filter.toLowerCase();
-      const d = await api.getConversations(f === "all" ? undefined : f) as Conversation[];
-      setConvs(d);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [filter]);
+  const statusFilter = filter.toLowerCase() === "all" ? undefined : filter.toLowerCase();
+  const { data: convs, isLoading: loading, refetch } = useConversations(statusFilter);
 
-  useMountFetch(load, [load]);
-  useRealtime({ table: "conversations", onchange: load });
-  useRealtime({ table: "messages",      onchange: () => selected && refreshMessages(selected.id) });
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const refreshMessages = async (convId: string) => {
@@ -63,7 +52,6 @@ export default function ConversationsPage() {
       const d = await api.getConversation(convId) as Conversation & { messages: Message[] };
       setMessages(d.messages || []);
       // Refresh selected conv ownership
-      setConvs(prev => prev.map(c => c.id === convId ? { ...c, ownership: d.ownership, taken_over_by: d.taken_over_by } : c));
       setSelected(prev => prev?.id === convId ? { ...prev, ownership: d.ownership, taken_over_by: d.taken_over_by } : prev);
     } catch {}
   };
@@ -87,9 +75,9 @@ export default function ConversationsPage() {
       await api.takeOver(selected.id, user.full_name, "Receptionist took over the conversation");
       toast.success("You've taken over this conversation");
       setSelected(prev => prev ? { ...prev, ownership: "HUMAN_ACTIVE", taken_over_by: user.full_name } : prev);
-      setConvs(prev => prev.map(c => c.id === selected.id ? { ...c, ownership: "HUMAN_ACTIVE" } : c));
       const tl = await api.getConversationTimeline(selected.id) as ConversationTimelineEvent[];
       setTimeline(tl);
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     } catch (e: unknown) { toast.error((e as Error).message || "Takeover failed"); }
     finally { setActLoading(false); }
   };
@@ -101,9 +89,9 @@ export default function ConversationsPage() {
       await api.resumeAI(selected.id, "Receptionist resumed AI control");
       toast.success("AI has resumed control");
       setSelected(prev => prev ? { ...prev, ownership: "AI_ACTIVE" } : prev);
-      setConvs(prev => prev.map(c => c.id === selected.id ? { ...c, ownership: "AI_ACTIVE" } : c));
       const tl = await api.getConversationTimeline(selected.id) as ConversationTimelineEvent[];
       setTimeline(tl);
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     } catch (e: unknown) { toast.error((e as Error).message || "Resume AI failed"); }
     finally { setActLoading(false); }
   };
@@ -116,7 +104,7 @@ export default function ConversationsPage() {
       // Update conversation status via Supabase directly through the conversations endpoint
       await api.takeOver(selected.id, user?.full_name || "Staff", "Conversation resolved").catch(() => {});
       toast.success("Conversation marked as resolved");
-      setConvs(prev => prev.map(c => c.id === selected.id ? { ...c, status: "closed" } : c));
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
     } catch { toast.error("Failed to resolve"); }
     finally { setActLoading(false); }
   };
@@ -159,14 +147,14 @@ export default function ConversationsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <TopNav title="Conversations" subtitle={`${convs.length} total`} onRefresh={load} loading={loading} />
+      <TopNav title="Conversations" subtitle={`${convs?.length || 0} total`} onRefresh={refetch} loading={loading} />
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         {/* ── COL 1: List ──────────────────────────── */}
         <div style={{ width: 260, minWidth: 260, display: "flex", flexDirection: "column", borderRight: "1px solid var(--bdr)", background: "var(--sidebar-bg)", overflow: "hidden" }}>
           <div style={{ padding: "14px 16px 10px" }}>
             <p style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>Conversations</p>
-            <p style={{ fontSize: 11, color: "#4a5578", marginTop: 2 }}>{convs.length} active threads</p>
+            <p style={{ fontSize: 11, color: "#4a5578", marginTop: 2 }}>{convs?.length || 0} active threads</p>
           </div>
           <div style={{ display: "flex", gap: 4, padding: "0 12px 10px" }}>
             {TABS.map(t => (

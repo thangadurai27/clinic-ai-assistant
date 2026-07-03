@@ -1,9 +1,9 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { UserCheck, CheckCircle2, FileText, Clock } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
-import { api } from "@/services/api";
-import { useMountFetch } from "@/hooks/useMountFetch";
+import { useEscalations } from "@/hooks/useDashboard";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Escalation } from "@/types";
 import { timeAgo, getInitials } from "@/lib/utils";
 
@@ -29,29 +29,21 @@ function stBadge(s: string) {
 
 
 export default function EscalationsPage() {
-  const [escs,    setEscs]  = useState<Escalation[]>([]);
-  const [loading, setLoad]  = useState(true);
+  const { data: escs, isLoading: loading, refetch } = useEscalations();
+  const queryClient = useQueryClient();
   const [updating,setUpd]   = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    setLoad(true);
-    try { const d = await api.getEscalations() as Escalation[]; setEscs(d); }
-    catch (e) { console.error(e); } finally { setLoad(false); }
-  }, []);
-
-  useMountFetch(load, [load]);
 
   const act = async (id: string, status: "in_progress" | "resolved") => {
     setUpd(id);
     try {
       await api.updateEscalationStatus(id, status);
-      setEscs(p => p.map(e => e.id === id ? { ...e, status } : e));
+      queryClient.invalidateQueries({ queryKey: ["escalations"] });
     } catch (e) { console.error(e); } finally { setUpd(null); }
   };
 
-  const openList = escs.filter(e => e.status === "open");
-  const inPro    = escs.filter(e => e.status === "in_progress");
-  const done     = escs.filter(e => e.status === "resolved");
+  const openList = useMemo(() => escs?.filter(e => e.status === "open") || [], [escs]);
+  const inPro    = useMemo(() => escs?.filter(e => e.status === "in_progress") || [], [escs]);
+  const done     = useMemo(() => escs?.filter(e => e.status === "resolved") || [], [escs]);
 
   /* KPI summary cards */
   const summary = [
@@ -65,7 +57,7 @@ export default function EscalationsPage() {
       <TopNav
         title="Escalations"
         subtitle={`${openList.length} open · ${inPro.length} in progress`}
-        onRefresh={load}
+        onRefresh={refetch}
         loading={loading}
       />
 

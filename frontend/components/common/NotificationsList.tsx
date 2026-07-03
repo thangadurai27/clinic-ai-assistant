@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useState, useMemo } from "react";
 import {
   AlertTriangle,
   Bell,
@@ -12,10 +12,10 @@ import {
   PhoneCall,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import TopNav from "@/components/layout/TopNav";
-import { useMountFetch } from "@/hooks/useMountFetch";
-import { useRealtime } from "@/hooks/useRealtime";
+import { useNotifications } from "@/hooks/useDashboard";
 import { api } from "@/services/api";
 import { timeAgo } from "@/lib/utils";
 import type { Notification } from "@/types";
@@ -64,38 +64,41 @@ interface NotificationsListProps {
 
 export default function NotificationsList({ accent = "blue", patientScoped = false }: NotificationsListProps) {
   const theme = ACCENT[accent];
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  
+  let notificationsData: Notification[] | undefined;
+  let loading: boolean;
+  let refetch: () => void;
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = (patientScoped
-        ? await api.getPatientNotifications(100)
-        : await api.getNotifications(100)) as Notification[];
-      setNotifications(data);
-    } catch {
-      toast.error("Failed to load notifications");
-    } finally {
-      setLoading(false);
-    }
-  }, [patientScoped]);
+  if (patientScoped) {
+    const queryResult = useQuery({
+      queryKey: ['patientNotifications'],
+      queryFn: () => api.getPatientNotifications(100)
+    });
+    notificationsData = queryResult.data;
+    loading = queryResult.isLoading;
+    refetch = queryResult.refetch;
+  } else {
+    const queryResult = useNotifications(100);
+    notificationsData = queryResult.data;
+    loading = queryResult.isLoading;
+    refetch = queryResult.refetch;
+  }
+  
+  const notifications = notificationsData || [];
 
-  useMountFetch(load, [load]);
-
-  useRealtime({ table: "notifications", onchange: load });
-
-  const unread = notifications.filter((n) => !n.is_read);
+  const unread = useMemo(() => notifications.filter((n) => !n.is_read), [notifications]);
 
   const markAll = async () => {
     try {
       if (patientScoped) {
         await api.markAllPatientNotificationsRead();
+        queryClient.invalidateQueries({ queryKey: ['patientNotifications'] });
       } else {
         await api.markAllNotificationsRead();
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
       }
       toast.success("All notifications marked as read");
-      load();
     } catch {
       toast.error("Failed to mark all read");
     }
@@ -105,12 +108,11 @@ export default function NotificationsList({ accent = "blue", patientScoped = fal
     try {
       if (patientScoped) {
         await api.markPatientNotificationRead(id);
+        queryClient.invalidateQueries({ queryKey: ['patientNotifications'] });
       } else {
         await api.markNotificationRead(id);
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
       }
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, is_read: true } : n))
-      );
     } catch {
       /* silent */
     }
@@ -120,7 +122,7 @@ export default function NotificationsList({ accent = "blue", patientScoped = fal
     if (!patientScoped) return;
     try {
       await api.deletePatientNotification(id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      queryClient.invalidateQueries({ queryKey: ['patientNotifications'] });
       toast.success("Notification deleted");
     } catch {
       toast.error("Failed to delete notification");
@@ -132,7 +134,7 @@ export default function NotificationsList({ accent = "blue", patientScoped = fal
       <TopNav
         title="Notifications"
         subtitle={unread.length > 0 ? `${unread.length} unread` : "All caught up"}
-        onRefresh={load}
+        onRefresh={refetch}
         loading={loading}
         actions={
           unread.length > 0 ? (

@@ -1,11 +1,9 @@
 "use client";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Search, Phone, Mail, Calendar, MessageSquare, Users } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
-import { api } from "@/services/api";
-import { useRealtime } from "@/hooks/useRealtime";
+import { usePatients } from "@/hooks/useDashboard";
 import { useDebounce } from "@/hooks/useDebounce";
-import { useMountFetch } from "@/hooks/useMountFetch";
 import type { Patient } from "@/types";
 import { formatDate, getInitials } from "@/lib/utils";
 import Link from "next/link";
@@ -21,29 +19,21 @@ const CHANNEL_COLORS: Record<string, { bg: string; color: string }> = {
 
 
 export default function PatientsPage() {
-  const [patients,    setPatients]    = useState<Patient[]>([]);
-  const [loading,     setLoading]     = useState(true);
+  const { data: patients, isLoading: loading, refetch } = usePatients();
   const [search,      setSearch]      = useState("");
   const debouncedSearch = useDebounce(search, 300);
   const [hero,        setHero]        = useState<Patient | null>(null);
   const [hoveredRow,  setHoveredRow]  = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      const d = await api.getPatients() as Patient[];
-      setPatients(d);
-      setHero(prev => prev ?? d[0] ?? null);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, []);
-
-  useMountFetch(load, [load]);
-
-  // Auto-refresh when patients table changes
-  useRealtime({ table: "patients", onchange: load });
+  // Update hero when patients data changes
+  useEffect(() => {
+    if (patients && patients.length > 0) {
+      setHero(prev => prev ?? patients[0] ?? null);
+    }
+  }, [patients]);
 
   const filtered = useMemo(() => {
+    if (!patients) return [];
     const q = debouncedSearch.toLowerCase();
     if (!q) return patients;
     return patients.filter(p =>
@@ -57,7 +47,7 @@ export default function PatientsPage() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <TopNav title="Patients" subtitle={`${patients.length} registered`} onRefresh={load} loading={loading} />
+      <TopNav title="Patients" subtitle={`${patients?.length || 0} registered`} onRefresh={refetch} loading={loading} />
 
       <div className="page-enter" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "16px 20px" }}>
 

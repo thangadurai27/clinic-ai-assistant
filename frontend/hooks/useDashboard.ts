@@ -12,7 +12,10 @@ export function useDashboardStats() {
 export function useConversations(statusFilter?: string) {
   return useQuery<Conversation[]>({
     queryKey: ['conversations', statusFilter],
-    queryFn: () => api.getConversations(statusFilter),
+    queryFn: async () => {
+      const data = await api.getConversations(statusFilter);
+      return data.sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
+    },
   });
 }
 

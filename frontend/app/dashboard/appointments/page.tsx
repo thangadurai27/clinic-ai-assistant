@@ -1,9 +1,8 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useMemo } from "react";
 import { Calendar, Clock, Stethoscope, ChevronDown } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
-import { api } from "@/services/api";
-import { useMountFetch } from "@/hooks/useMountFetch";
+import { useAppointments } from "@/hooks/useDashboard";
 import type { Appointment } from "@/types";
 import { formatDateTime, getInitials } from "@/lib/utils";
 
@@ -33,35 +32,25 @@ const STATUS_OPTS = ["By Status", "confirmed", "scheduled", "completed", "cancel
 
 
 export default function AppointmentsPage() {
-  const [appts, setAppts] = useState<Appointment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: appts, isLoading: loading, refetch } = useAppointments();
   const [fStatus, setFS] = useState("By Status");
   const [sortBy, setSortBy] = useState("By Date");
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { const d = await api.getAppointments() as Appointment[]; setAppts(d); }
-    catch (e) { console.error(e); } finally { setLoading(false); }
-  }, []);
-
-  useMountFetch(load, [load]);
-
   const now = new Date();
   const todayISO = now.toISOString().split('T')[0]; // YYYY-MM-DD
-  const today = appts.filter(a => a.date?.startsWith(todayISO));
-  const upcoming = appts.filter(a => {
+  const today = useMemo(() => appts?.filter(a => a.date?.startsWith(todayISO)) || [], [appts, todayISO]);
+  const upcoming = useMemo(() => appts?.filter(a => {
     const apptDate = a.date ? new Date(a.date) : null;
     return apptDate && apptDate > now && !apptDate.toISOString().startsWith(todayISO);
-  });
+  }) || [], [appts, now, todayISO]);
 
-  const displayed = appts
-    .filter(a => fStatus === "By Status" || a.status === fStatus)
+  const displayed = useMemo(() => appts?.filter(a => fStatus === "By Status" || a.status === fStatus)
     .sort((a, b) => sortBy === "By Date"
       ? new Date(a.date).getTime() - new Date(b.date).getTime()
       : (a.status ?? "").localeCompare(b.status ?? "")
-    );
+    ) || [], [appts, fStatus, sortBy]);
 
   /* KPI cards — matching the reference: icon left in colored square, value big, subtitle small */
   const kpis = [
@@ -89,20 +78,20 @@ export default function AppointmentsPage() {
     },
     {
       label: "Total Scheduled",
-      value: loading ? "—" : appts.length,
+      value: loading ? "—" : appts?.length || 0,
       icon: Stethoscope,
       iconBg: "rgba(20,184,166,0.2)",
       iconColor: "#2dd4bf",
       iconBorder: "rgba(20,184,166,0.3)",
       border: "rgba(20,184,166,0.25)",
       glow: "rgba(20,184,166,0.12)",
-      sub: `+${appts.length} total`,
+      sub: `+${appts?.length || 0} total`,
     },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <TopNav title="Appointments" subtitle={`${appts.length} total scheduled`} onRefresh={load} loading={loading} />
+      <TopNav title="Appointments" subtitle={`${appts?.length || 0} total scheduled`} onRefresh={refetch} loading={loading} />
 
       <div className="page-enter" style={{ flex: 1, overflowY: "auto", overflowX: "hidden", padding: "16px 20px" }}>
 
