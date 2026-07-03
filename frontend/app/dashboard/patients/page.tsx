@@ -1,10 +1,9 @@
 "use client";
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { Search, Phone, Mail, Calendar, MessageSquare, Users } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
 import { usePatients } from "@/hooks/useDashboard";
 import { useDebounce } from "@/hooks/useDebounce";
-import type { Patient } from "@/types";
 import { formatDate, getInitials } from "@/lib/utils";
 import Link from "next/link";
 
@@ -22,15 +21,17 @@ export default function PatientsPage() {
   const { data: patients, isLoading: loading, refetch } = usePatients();
   const [search,      setSearch]      = useState("");
   const debouncedSearch = useDebounce(search, 300);
-  const [hero,        setHero]        = useState<Patient | null>(null);
+  const [selectedHero, setSelectedHero] = useState<string | null>(null);
   const [hoveredRow,  setHoveredRow]  = useState<string | null>(null);
 
-  // Update hero when patients data changes
-  useEffect(() => {
-    if (patients && patients.length > 0) {
-      setHero(prev => prev ?? patients[0] ?? null);
+  const hero = useMemo(() => {
+    if (!patients || patients.length === 0) return null;
+    if (selectedHero) {
+      const found = patients.find(p => p.id === selectedHero);
+      if (found) return found;
     }
-  }, [patients]);
+    return patients[0];
+  }, [patients, selectedHero]);
 
   const filtered = useMemo(() => {
     if (!patients) return [];
@@ -194,7 +195,7 @@ export default function PatientsPage() {
                   return (
                     <div className="animate-fade-in" key={p.id}>
                       <div
-                        onClick={() => setHero(p)}
+                        onClick={() => setSelectedHero(p.id)}
                         onMouseEnter={() => setHoveredRow(p.id)}
                         onMouseLeave={() => setHoveredRow(null)}
                         style={{

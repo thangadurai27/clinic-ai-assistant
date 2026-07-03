@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import {
   AlertTriangle,
   Bell,
@@ -66,26 +66,23 @@ export default function NotificationsList({ accent = "blue", patientScoped = fal
   const theme = ACCENT[accent];
   const queryClient = useQueryClient();
   
-  let notificationsData: Notification[] | undefined;
-  let loading: boolean;
-  let refetch: () => void;
-
-  if (patientScoped) {
-    const queryResult = useQuery({
-      queryKey: ['patientNotifications'],
-      queryFn: () => api.getPatientNotifications(100)
-    });
-    notificationsData = queryResult.data;
-    loading = queryResult.isLoading;
-    refetch = queryResult.refetch;
-  } else {
-    const queryResult = useNotifications(100);
-    notificationsData = queryResult.data;
-    loading = queryResult.isLoading;
-    refetch = queryResult.refetch;
-  }
+  // Always call hooks at the top level
+  const patientScopedQuery = useQuery<Notification[]>({
+    queryKey: ['patientNotifications'],
+    queryFn: () => api.getPatientNotifications(100),
+    enabled: patientScoped
+  });
   
-  const notifications = notificationsData || [];
+  const globalNotificationsResult = useNotifications(100, { enabled: !patientScoped });
+  
+  // Select the appropriate data based on patientScoped
+  const queryResult = patientScoped ? patientScopedQuery : globalNotificationsResult;
+  
+  const notificationsData = queryResult.data;
+  const loading = queryResult.isLoading;
+  const refetch = queryResult.refetch;
+  
+  const notifications = useMemo(() => notificationsData || [], [notificationsData]);
 
   const unread = useMemo(() => notifications.filter((n) => !n.is_read), [notifications]);
 

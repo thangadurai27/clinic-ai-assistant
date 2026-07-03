@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   MessageSquare, Bot, UserCheck, CheckCircle2,
   Send, Loader2, RotateCcw, RefreshCw,
@@ -169,12 +169,12 @@ export default function ConversationsPage() {
           <div style={{ flex: 1, overflowY: "auto" }}>
             {loading ? (
               <div style={{ padding: 10 }}>{Array(5).fill(0).map((_, i) => <div key={i} className="skeleton" style={{ height: 72, marginBottom: 6 }} />)}</div>
-            ) : convs.length === 0 ? (
+            ) : (convs?.length || 0) === 0 ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 100, gap: 8 }}>
                 <MessageSquare size={24} color="#4a5578" />
                 <p style={{ fontSize: 11, color: "#4a5578" }}>No conversations</p>
               </div>
-            ) : convs.map(c => {
+            ) : convs?.map(c => {
               const init  = getInitials(c.patients?.name || "P");
               const color = avBg(init[0]);
               const isSel = selected?.id === c.id;

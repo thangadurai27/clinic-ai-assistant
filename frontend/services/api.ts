@@ -180,7 +180,7 @@ export const api = {
   getPatientConversation: (conversationId: string) => request(`/patient/messages/${conversationId}`),
   sendPatientMessage: (body: unknown) =>
     request("/patient/messages", { method: "POST", body: JSON.stringify(body) }),
-  getPatientNotifications: (limit = 100) => request(`/patient/notifications?limit=${limit}`),
+  getPatientNotifications: (limit = 100) => request<Notification[]>(`/patient/notifications?limit=${limit}`),
   getPatientMedicationReminders: () => request("/patient/medication-reminders"),
   markPatientNotificationRead: (notificationId: string) =>
     request("/patient/notifications/read", {

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/services/api';
-import type { Conversation, Escalation, Appointment, DashboardStats, AnalyticsData } from '@/types';
+import type { Conversation, Escalation, Appointment, DashboardStats, AnalyticsData, Patient, Notification } from '@/types';
 
 export function useDashboardStats() {
   return useQuery<DashboardStats>({
@@ -34,16 +34,17 @@ export function useAppointments(patientId?: string) {
 }
 
 export function usePatients() {
-  return useQuery({
+  return useQuery<Patient[]>({
     queryKey: ['patients'],
     queryFn: () => api.getPatients(),
   });
 }
 
-export function useNotifications(limit?: number) {
-  return useQuery({
+export function useNotifications(limit?: number, options?: any) {
+  return useQuery<Notification[]>({
     queryKey: ['notifications', limit],
     queryFn: () => api.getNotifications(limit),
+    ...options
   });
 }
 

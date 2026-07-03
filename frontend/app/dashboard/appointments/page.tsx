@@ -3,7 +3,6 @@ import { useState, useMemo } from "react";
 import { Calendar, Clock, Stethoscope, ChevronDown } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
 import { useAppointments } from "@/hooks/useDashboard";
-import type { Appointment } from "@/types";
 import { formatDateTime, getInitials } from "@/lib/utils";
 
 /* ── Avatar colours ──────────────────────────────────── */
@@ -38,8 +37,13 @@ export default function AppointmentsPage() {
   const [showSort, setShowSort] = useState(false);
   const [showFilter, setShowFilter] = useState(false);
 
-  const now = new Date();
-  const todayISO = now.toISOString().split('T')[0]; // YYYY-MM-DD
+  const { now, todayISO } = useMemo(() => {
+    const n = new Date();
+    return {
+      now: n,
+      todayISO: n.toISOString().split('T')[0]
+    };
+  }, []);
   const today = useMemo(() => appts?.filter(a => a.date?.startsWith(todayISO)) || [], [appts, todayISO]);
   const upcoming = useMemo(() => appts?.filter(a => {
     const apptDate = a.date ? new Date(a.date) : null;

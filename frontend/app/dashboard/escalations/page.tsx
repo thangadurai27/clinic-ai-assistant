@@ -4,7 +4,7 @@ import { UserCheck, CheckCircle2, FileText, Clock } from "lucide-react";
 import TopNav from "@/components/layout/TopNav";
 import { useEscalations } from "@/hooks/useDashboard";
 import { useQueryClient } from "@tanstack/react-query";
-import type { Escalation } from "@/types";
+import { api } from "@/services/api";
 import { timeAgo, getInitials } from "@/lib/utils";
 
 /* ── Avatar colours ──────────────────────────────── */
@@ -104,7 +104,7 @@ export default function EscalationsPage() {
               <div key={i} className="skeleton" style={{ height: 140 }} />
             ))}
           </div>
-        ) : escs.length === 0 ? (
+        ) : (escs?.length || 0) === 0 ? (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "60px 0", gap: 12 }}>
             <CheckCircle2 size={36} color="#22c55e" />
             <p style={{ fontSize: 14, fontWeight: 600, color: "#fff" }}>All Clear</p>
@@ -114,7 +114,7 @@ export default function EscalationsPage() {
           <div className="animate-fade-in"
             style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
           >
-            {escs.map(e => {
+            {escs?.map(e => {
               const name  = e.patients?.name || "Unknown";
               const init  = getInitials(name);
               const color = avBg(init[0]);
