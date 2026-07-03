@@ -69,19 +69,27 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     7. Return structured response
     """
     # ── 1. Ensure patient ────────────────────────────────────────────────────
+    logger.info(f"[DEBUG] Incoming message: channel={request.channel}, patient_phone={request.patient_phone}, patient_email={request.patient_email}, conversation_id={request.conversation_id}")
     patient = None
     patient_name = request.patient_name or "Patient"
 
     if request.patient_id:
+        logger.info(f"[DEBUG] Looking up patient via patient_id: {request.patient_id}")
         patient = await patient_repo.get_by_id(str(request.patient_id))
+        logger.info(f"[DEBUG] Found patient via patient_id: {patient}")
 
     if not patient and (request.patient_phone or request.patient_email):
         try:
             if request.patient_phone:
+                logger.info(f"[DEBUG] Looking up patient via phone: {request.patient_phone}")
                 patient = await patient_repo.get_by_phone(request.patient_phone)
+                logger.info(f"[DEBUG] Found patient via phone: {patient}")
             if not patient and request.patient_email:
+                logger.info(f"[DEBUG] Looking up patient via email: {request.patient_email}")
                 patient = await patient_repo.get_by_email(str(request.patient_email))
+                logger.info(f"[DEBUG] Found patient via email: {patient}")
             if not patient:
+                logger.info(f"[DEBUG] Creating new patient with name: {patient_name}, phone: {request.patient_phone}, email: {request.patient_email}")
                 patient = await patient_repo.create(
                     PatientCreate(
                         name=patient_name,
@@ -90,23 +98,31 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                         preferred_channel=request.channel.value,
                     )
                 )
+                logger.info(f"[DEBUG] Created new patient: {patient}")
         except Exception as e:
             logger.warning(f"Patient lookup/create failed: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
 
     if patient:
         patient_name = patient.get("name", patient_name)
         patient_id_str = str(patient["id"])
+        logger.info(f"[DEBUG] Using patient_id: {patient_id_str}")
     elif request.patient_id:
         patient_id_str = str(request.patient_id)
+        logger.info(f"[DEBUG] Using patient_id from request (no patient found): {patient_id_str}")
     else:
         patient_id_str = None
+        logger.warning(f"[DEBUG] No patient_id could be determined!")
 
     # ── 2. Create / continue conversation ────────────────────────────────────
     conv_id_str = str(request.conversation_id) if request.conversation_id else None
+    logger.info(f"[DEBUG] Initial conv_id_str from request: {conv_id_str}")
 
     # Try to find by gmail_thread_id if provided
     if not conv_id_str and request.gmail_thread_id:
         try:
+            logger.info(f"[DEBUG] Looking up conversation via gmail_thread_id: {request.gmail_thread_id}")
             res = await run_blocking(
                 lambda: get_supabase()
                 .table("conversations")
@@ -116,15 +132,19 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                 .limit(1)
                 .execute()
             )
+            logger.info(f"[DEBUG] gmail_thread_id lookup result: {res}")
             if res.data:
                 conv_id_str = str(res.data[0]["id"])
-                logger.info(f"Found existing conversation {conv_id_str} via gmail_thread_id")
+                logger.info(f"[DEBUG] Found existing conversation {conv_id_str} via gmail_thread_id")
         except Exception as e:
             logger.warning(f"Thread lookup failed: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
     
     # Try to find existing conversation by patient_id (if patient exists)
     if not conv_id_str and patient_id_str:
         try:
+            logger.info(f"[DEBUG] Looking up conversation via patient_id: {patient_id_str}")
             res = await run_blocking(
                 lambda: get_supabase()
                 .table("conversations")
@@ -134,11 +154,16 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                 .limit(1)
                 .execute()
             )
+            logger.info(f"[DEBUG] patient_id lookup result: {res}")
             if res.data:
                 conv_id_str = str(res.data[0]["id"])
-                logger.info(f"Found existing conversation {conv_id_str} via patient_id")
+                logger.info(f"[DEBUG] Found existing conversation {conv_id_str} via patient_id")
         except Exception as e:
             logger.warning(f"Patient conversation lookup failed: {e}")
+            import traceback
+            logger.warning(traceback.format_exc())
+    
+    logger.info(f"[DEBUG] Final conv_id_str before workflow: {conv_id_str}")
 
     # ── 3. Run LangGraph workflow ─────────────────────────────────────────────
     start_time = time.perf_counter()
@@ -171,15 +196,21 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
     new_conv_id = None
     try:
         if patient_id_str:
+            logger.info(f"[DEBUG] Starting persistence for patient_id: {patient_id_str}")
             conv_status = ConversationStatus.ESCALATED if escalated else ConversationStatus.OPEN
+            logger.info(f"[DEBUG] Conversation status will be: {conv_status.value}")
             existing_conv = None
             if conv_id_str:
+                logger.info(f"[DEBUG] Checking if conversation {conv_id_str} exists...")
                 existing_conv = await conversation_repo.get_by_id(conv_id_str)
+                logger.info(f"[DEBUG] existing_conv: {existing_conv}")
                 if existing_conv and str(existing_conv.get("patient_id")) != patient_id_str:
+                    logger.warning(f"[DEBUG] existing_conv patient_id mismatch: {existing_conv.get('patient_id')} vs {patient_id_str}, ignoring existing_conv")
                     existing_conv = None
 
             if existing_conv:
                 new_conv_id = conv_id_str
+                logger.info(f"[DEBUG] Using existing conversation: {new_conv_id}")
 
                 def _touch_conversation() -> None:
                     updates = {
@@ -192,13 +223,18 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                     summary = metadata.get("escalation_summary")
                     if summary:
                         updates["summary"] = summary
+                    logger.info(f"[DEBUG] Updating conversation {new_conv_id} with: {updates}")
                     try:
-                        get_supabase().table("conversations").update(updates).eq("id", new_conv_id).execute()
-                    except Exception:
-                        pass
+                        res = get_supabase().table("conversations").update(updates).eq("id", new_conv_id).execute()
+                        logger.info(f"[DEBUG] conversation update result: {res}")
+                    except Exception as e:
+                        logger.error(f"[DEBUG] Failed to update conversation: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
 
                 await run_blocking(_touch_conversation)
             else:
+                logger.info(f"[DEBUG] Creating new conversation for patient {patient_id_str}")
                 conv_data = await conversation_repo.create(
                     ConversationCreate(
                         patient_id=UUID(patient_id_str),
@@ -210,22 +246,31 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                     )
                 )
                 new_conv_id = str(conv_data.get("id", ""))
+                logger.info(f"[DEBUG] Created new conversation: {conv_data}, new_conv_id: {new_conv_id}")
 
             if new_conv_id:
+                logger.info(f"[DEBUG] Creating messages for conversation: {new_conv_id}")
                 conv_uuid = UUID(new_conv_id)
-                await message_repo.create(MessageCreate(
+                patient_msg = await message_repo.create(MessageCreate(
                     conversation_id=conv_uuid,
                     sender=MessageSender.PATIENT,
                     content=request.message,
                     channel=request.channel,
                 ))
-                await message_repo.create(MessageCreate(
+                logger.info(f"[DEBUG] Created patient message: {patient_msg}")
+                ai_msg = await message_repo.create(MessageCreate(
                     conversation_id=conv_uuid,
                     sender=MessageSender.AI,
                     content=response_text,
                     channel=request.channel,
                 ))
+                logger.info(f"[DEBUG] Created AI message: {ai_msg}")
                 await conversation_repo.update_updated_at(new_conv_id)
+                
+                # Verify messages were saved correctly!
+                logger.info(f"[DEBUG] Verifying messages in conversation {new_conv_id}...")
+                messages = await message_repo.get_by_conversation(new_conv_id)
+                logger.info(f"[DEBUG] Verified messages: {messages}")
 
             if escalated and patient_id_str:
                 await escalation_repo.create(EscalationCreate(

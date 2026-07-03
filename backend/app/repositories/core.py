@@ -156,12 +156,15 @@ class MessageRepository:
     TABLE = "messages"
 
     async def create(self, data: MessageCreate) -> dict:
+        logger.info(f"[DEBUG] Creating message: {data}")
         res = await run_blocking(
             lambda: _db().table(self.TABLE).insert(data.model_dump(mode="json")).execute()
         )
+        logger.info(f"[DEBUG] Created message result: {res}")
         return res.data[0] if res.data else {}
 
     async def get_by_conversation(self, conv_id: str) -> list[dict]:
+        logger.info(f"[DEBUG] Getting messages for conversation {conv_id}")
         res = await run_blocking(
             lambda: _db()
             .table(self.TABLE)
@@ -170,6 +173,7 @@ class MessageRepository:
             .order("timestamp", desc=False)
             .execute()
         )
+        logger.info(f"[DEBUG] Got messages for conv {conv_id}: {res.data}")
         return res.data or []
 
 

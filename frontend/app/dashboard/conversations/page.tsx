@@ -48,24 +48,36 @@ export default function ConversationsPage() {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const refreshMessages = async (convId: string) => {
+    console.log("[DEBUG] refreshMessages called with convId:", convId);
     try {
       const d = await api.getConversation(convId) as Conversation & { messages: Message[] };
+      console.log("[DEBUG] refreshMessages got conversation data:", d);
+      console.log("[DEBUG] refreshMessages messages:", d.messages);
       setMessages(d.messages || []);
       // Refresh selected conv ownership
       setSelected(prev => prev?.id === convId ? { ...prev, ownership: d.ownership, taken_over_by: d.taken_over_by } : prev);
-    } catch {}
+    } catch (e) {
+      console.error("[DEBUG] refreshMessages error:", e);
+    }
   };
 
   const selectConv = async (c: Conversation) => {
+    console.log("[DEBUG] selectConv called with conversation:", c);
     setSelected(c); setMsgLoad(true);
     try {
       const d = await api.getConversation(c.id) as Conversation & { messages: Message[] };
+      console.log("[DEBUG] selectConv got data from api:", d);
+      console.log("[DEBUG] selectConv messages from api:", d.messages);
       setMessages(d.messages || []);
       const tl = await api.getConversationTimeline(c.id) as ConversationTimelineEvent[];
       setTimeline(tl);
       setSelected({ ...c, ownership: d.ownership, taken_over_by: d.taken_over_by });
-    } catch { setMessages([]); setTimeline([]); }
-    finally { setMsgLoad(false); }
+    } catch (e) {
+      console.error("[DEBUG] selectConv error:", e);
+      setMessages([]); setTimeline([]); 
+    } finally { 
+      setMsgLoad(false); 
+    }
   };
 
   const takeOver = async () => {

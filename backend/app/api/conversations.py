@@ -24,15 +24,24 @@ async def list_conversations(limit: int = 100, status_filter: str | None = None)
 @router.get("/{conversation_id}", status_code=status.HTTP_200_OK)
 async def get_conversation(conversation_id: str) -> dict:
     try:
+        logger.info(f"[DEBUG] API get_conversation called with id: {conversation_id}")
         conv = await conversation_repo.get_by_id(conversation_id)
+        logger.info(f"[DEBUG] Got conversation from repo: {conv}")
         if not conv:
+            logger.warning(f"[DEBUG] Conversation {conversation_id} not found!")
             raise HTTPException(status_code=404, detail="Conversation not found")
         messages = await message_repo.get_by_conversation(conversation_id)
-        return {**conv, "messages": messages}
+        logger.info(f"[DEBUG] Got messages from repo: {messages}")
+        logger.info(f"[DEBUG] API returning conversation with {len(messages)} messages")
+        result = {**conv, "messages": messages}
+        logger.info(f"[DEBUG] Full API response: {result}")
+        return result
     except HTTPException:
         raise
     except Exception as e:
         logger.exception(f"Error fetching conversation: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
 
