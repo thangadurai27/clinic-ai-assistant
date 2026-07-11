@@ -51,7 +51,8 @@ export interface Conversation {
   ai_confidence?: number;
   created_at: string;
   updated_at?: string;
-  last_message?: Message;
+  last_message?: string;
+  last_message_at?: string;
   patients?: Patient;
   messages?: Message[];
 }

@@ -93,13 +93,12 @@ class ConversationRepository:
         )
         return res.data
 
-    async def get_all(self, limit: int = 100, status: Optional[str] = None) -> list[dict]:
+    async def get_all(self, status: Optional[str] = None) -> list[dict]:
         def _query():
             query = (
                 _db()
                 .table(self.TABLE)
                 .select("*, patients(id, name, phone, email)")
-                .limit(limit)
                 .order("updated_at", desc=True)
             )
             if status:
@@ -107,12 +106,53 @@ class ConversationRepository:
             return query.execute()
 
         res = await run_blocking(_query)
+        logger.info(f"[DEBUG] ConversationRepository.get_all returned {len(res.data or [])} conversations")
         return res.data or []
 
     async def update_status(self, conv_id: str, status: str, summary: Optional[str] = None) -> dict:
         update_data: dict = {"status": status}
         if summary:
             update_data["summary"] = summary
+        res = await run_blocking(
+            lambda: _db().table(self.TABLE).update(update_data).eq("id", conv_id).execute()
+        )
+        return res.data[0] if res.data else {}
+
+    async def get_by_patient_and_channel(self, patient_id: str, channel: str) -> Optional[dict]:
+        logger.info(f"[DEBUG] Looking up conversation for patient {patient_id}, channel {channel}")
+        res = await run_blocking(
+            lambda: _db()
+            .table(self.TABLE)
+            .select("*, patients(id, name, phone, email)")
+            .eq("patient_id", patient_id)
+            .eq("channel", channel)
+            .order("updated_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if res.data:
+            logger.info(f"[DEBUG] Found existing conversation: {res.data[0]['id']}")
+            return res.data[0]
+        logger.info(f"[DEBUG] No existing conversation found")
+        return None
+
+    async def update_conversation_with_message(self, conv_id: str, last_message: str, status: Optional[str] = None, intent: Optional[str] = None, summary: Optional[str] = None, gmail_thread_id: Optional[str] = None) -> dict:
+        from datetime import datetime
+        now = datetime.utcnow().isoformat()
+        update_data: dict = {
+            "updated_at": now,
+            "last_message": last_message,
+            "last_message_at": now
+        }
+        if status:
+            update_data["status"] = status
+        if intent:
+            update_data["intent"] = intent
+        if summary:
+            update_data["summary"] = summary
+        if gmail_thread_id:
+            update_data["gmail_thread_id"] = gmail_thread_id
+        logger.info(f"[DEBUG] Updating conversation {conv_id} with data: {update_data}")
         res = await run_blocking(
             lambda: _db().table(self.TABLE).update(update_data).eq("id", conv_id).execute()
         )

@@ -10,13 +10,20 @@ export function useDashboardStats() {
 }
 
 export function useConversations(statusFilter?: string) {
-  return useQuery<Conversation[]>({
-    queryKey: ['conversations', statusFilter],
-    queryFn: async () => {
-      const data = await api.getConversations(statusFilter);
-      return data.sort((a, b) => new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime());
-    },
-  });
+    return useQuery<Conversation[]>({
+        queryKey: ["conversations", statusFilter],
+        queryFn: async () => {
+            const data = await api.getConversations(statusFilter);
+            console.log("[useConversations] Raw data from API:", data);
+            const sorted = data.sort((a, b) => {
+                const getTime = (c: Conversation) => 
+                    new Date(c.last_message_at || c.updated_at || c.created_at).getTime();
+                return getTime(b) - getTime(a);
+            });
+            console.log("[useConversations] Sorted data:", sorted);
+            return sorted;
+        },
+    });
 }
 
 export function useEscalations(statusFilter?: string) {

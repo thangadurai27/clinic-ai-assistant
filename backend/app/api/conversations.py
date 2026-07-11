@@ -12,10 +12,13 @@ router = APIRouter(prefix="/conversations", tags=["Conversations"])
 
 
 @router.get("", status_code=status.HTTP_200_OK)
-async def list_conversations(limit: int = 100, status_filter: str | None = None) -> list:
+async def list_conversations(status_filter: str | None = None) -> list:
     """List conversations ordered by updated_at DESC (newest first)."""
     try:
-        return await conversation_repo.get_all(limit=limit, status=status_filter)
+        logger.info("[DEBUG] Listing all conversations...")
+        conversations = await conversation_repo.get_all(status=status_filter)
+        logger.info(f"[DEBUG] Loaded {len(conversations)} conversations")
+        return conversations
     except Exception as e:
         logger.exception(f"Error fetching conversations: {e}")
         raise HTTPException(status_code=500, detail=str(e))

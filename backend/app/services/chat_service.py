@@ -141,23 +141,14 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             import traceback
             logger.warning(traceback.format_exc())
     
-    # Try to find existing conversation by patient_id (if patient exists)
+    # Try to find existing conversation by patient_id AND channel (if patient exists)
     if not conv_id_str and patient_id_str:
         try:
-            logger.info(f"[DEBUG] Looking up conversation via patient_id: {patient_id_str}")
-            res = await run_blocking(
-                lambda: get_supabase()
-                .table("conversations")
-                .select("id")
-                .eq("patient_id", patient_id_str)
-                .order("updated_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            logger.info(f"[DEBUG] patient_id lookup result: {res}")
-            if res.data:
-                conv_id_str = str(res.data[0]["id"])
-                logger.info(f"[DEBUG] Found existing conversation {conv_id_str} via patient_id")
+            logger.info(f"[DEBUG] Looking up conversation via patient_id and channel: {patient_id_str}, {request.channel.value}")
+            existing_conv = await conversation_repo.get_by_patient_and_channel(patient_id_str, request.channel.value)
+            if existing_conv:
+                conv_id_str = str(existing_conv["id"])
+                logger.info(f"[DEBUG] Found existing conversation {conv_id_str} via patient_id + channel")
         except Exception as e:
             logger.warning(f"Patient conversation lookup failed: {e}")
             import traceback
@@ -211,28 +202,6 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
             if existing_conv:
                 new_conv_id = conv_id_str
                 logger.info(f"[DEBUG] Using existing conversation: {new_conv_id}")
-
-                def _touch_conversation() -> None:
-                    updates = {
-                        "status": conv_status.value,
-                        "intent": intent.value if hasattr(intent, "value") else intent,
-                        "updated_at": datetime.utcnow().isoformat(),
-                    }
-                    if request.gmail_thread_id:
-                        updates["gmail_thread_id"] = request.gmail_thread_id
-                    summary = metadata.get("escalation_summary")
-                    if summary:
-                        updates["summary"] = summary
-                    logger.info(f"[DEBUG] Updating conversation {new_conv_id} with: {updates}")
-                    try:
-                        res = get_supabase().table("conversations").update(updates).eq("id", new_conv_id).execute()
-                        logger.info(f"[DEBUG] conversation update result: {res}")
-                    except Exception as e:
-                        logger.error(f"[DEBUG] Failed to update conversation: {e}")
-                        import traceback
-                        logger.error(traceback.format_exc())
-
-                await run_blocking(_touch_conversation)
             else:
                 logger.info(f"[DEBUG] Creating new conversation for patient {patient_id_str}")
                 conv_data = await conversation_repo.create(
@@ -265,7 +234,16 @@ async def handle_chat(request: ChatRequest) -> ChatResponse:
                     channel=request.channel,
                 ))
                 logger.info(f"[DEBUG] Created AI message: {ai_msg}")
-                await conversation_repo.update_updated_at(new_conv_id)
+                
+                # Update conversation with last message (AI's response is last)
+                await conversation_repo.update_conversation_with_message(
+                    conv_id=new_conv_id,
+                    last_message=response_text,
+                    status=conv_status.value,
+                    intent=intent.value if hasattr(intent, "value") else intent,
+                    summary=metadata.get("escalation_summary"),
+                    gmail_thread_id=request.gmail_thread_id
+                )
                 
                 # Verify messages were saved correctly!
                 logger.info(f"[DEBUG] Verifying messages in conversation {new_conv_id}...")

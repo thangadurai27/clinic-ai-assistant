@@ -4,12 +4,14 @@ Human Takeover API — manages AI ↔ Human conversation ownership.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from typing import Optional
 
 from app.db.supabase_client import get_supabase
 from app.repositories import timeline_repo, notification_repo, conversation_repo
+from app.utils.websocket_manager import manager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/conversations", tags=["Takeover"])
@@ -38,14 +40,15 @@ class StaffMessageRequest(BaseModel):
 @router.post("/{conversation_id}/takeover", status_code=200)
 async def take_over(conversation_id: str, req: TakeoverRequest) -> dict:
     """Switch conversation ownership from AI to Human."""
-    from datetime import datetime, timezone
     try:
+        now = datetime.now(timezone.utc).isoformat()
         # Update conversation status
         _db().table("conversations").update({
             "ownership": "HUMAN_ACTIVE",
             "status": "open",
             "taken_over_by": req.staff_name,
-            "taken_over_at": datetime.now(timezone.utc).isoformat(),
+            "taken_over_at": now,
+            "updated_at": now,
         }).eq("id", conversation_id).execute()
 
         # Log timeline event
@@ -63,6 +66,12 @@ async def take_over(conversation_id: str, req: TakeoverRequest) -> dict:
             body=f"Conversation {conversation_id[:8]} is now managed by {req.staff_name}",
             conversation_id=conversation_id,
         )
+        
+        # Broadcast websocket event
+        await manager.broadcast({
+            "type": "conversation_updated",
+            "conversation_id": conversation_id
+        })
 
         logger.info(f"[Takeover] Conversation {conversation_id} taken over by {req.staff_name}")
         return {"status": "HUMAN_ACTIVE", "taken_over_by": req.staff_name}
@@ -77,11 +86,12 @@ async def take_over(conversation_id: str, req: TakeoverRequest) -> dict:
 @router.post("/{conversation_id}/resume-ai", status_code=200)
 async def resume_ai(conversation_id: str, req: ResumeAIRequest) -> dict:
     """Switch conversation ownership back to AI."""
-    from datetime import datetime, timezone
     try:
+        now = datetime.now(timezone.utc).isoformat()
         _db().table("conversations").update({
             "ownership": "AI_ACTIVE",
-            "resumed_ai_at": datetime.now(timezone.utc).isoformat(),
+            "resumed_ai_at": now,
+            "updated_at": now,
         }).eq("id", conversation_id).execute()
 
         await timeline_repo.log(
@@ -90,6 +100,12 @@ async def resume_ai(conversation_id: str, req: ResumeAIRequest) -> dict:
             actor="Staff",
             note=req.note or "AI resumed control",
         )
+        
+        # Broadcast websocket event
+        await manager.broadcast({
+            "type": "conversation_updated",
+            "conversation_id": conversation_id
+        })
 
         logger.info(f"[Takeover] AI resumed for conversation {conversation_id}")
         return {"status": "AI_ACTIVE"}
@@ -106,18 +122,28 @@ async def send_staff_message(conversation_id: str, req: StaffMessageRequest) -> 
     """Send a message as staff (only valid when HUMAN_ACTIVE)."""
     try:
         # Check ownership
-        conv = _db().table("conversations").select("ownership").eq("id", conversation_id).single().execute()
+        conv = _db().table("conversations").select("ownership, patient_id").eq("id", conversation_id).single().execute()
         if not conv.data:
             raise HTTPException(404, "Conversation not found")
         if conv.data.get("ownership") != "HUMAN_ACTIVE":
             raise HTTPException(400, "Conversation is not in human takeover mode")
 
+        logger.info(f"[Staff Message] Sending staff message to conversation {conversation_id}")
+        
         # Insert staff message
         res = _db().table("messages").insert({
             "conversation_id": conversation_id,
             "sender": "staff",
             "content": req.content,
         }).execute()
+        
+        # Update conversation with last message
+        now = datetime.now(timezone.utc).isoformat()
+        _db().table("conversations").update({
+            "last_message": req.content,
+            "last_message_at": now,
+            "updated_at": now
+        }).eq("id", conversation_id).execute()
 
         try:
             conv_details = await conversation_repo.get_by_id(conversation_id)
@@ -177,6 +203,19 @@ async def send_staff_message(conversation_id: str, req: StaffMessageRequest) -> 
             actor=req.staff_name,
             note=req.content[:100],
         )
+        
+        # Broadcast websocket events
+        await manager.broadcast({
+            "type": "new_message",
+            "conversation_id": conversation_id,
+            "patient_id": conv.data.get("patient_id")
+        })
+        await manager.broadcast({
+            "type": "conversation_updated",
+            "conversation_id": conversation_id,
+            "patient_id": conv.data.get("patient_id")
+        })
+        logger.info(f"[Staff Message] Sent staff message to conversation {conversation_id}")
 
         return res.data[0] if res.data else {}
 

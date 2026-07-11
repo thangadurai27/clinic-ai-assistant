@@ -192,6 +192,7 @@ export default function ConversationsPage() {
               const isSel = selected?.id === c.id;
               const ist   = intentStyle(c.intent);
               const isHum = c.ownership === "HUMAN_ACTIVE";
+              const lastMsgTime = c.last_message_at || c.updated_at || c.created_at;
               return (
                 <button key={c.id} onClick={() => selectConv(c)} style={{
                   display: "block", width: "100%", textAlign: "left",
@@ -207,8 +208,11 @@ export default function ConversationsPage() {
                         <span style={{ fontSize: 13, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 110 }}>
                           {c.patients?.name || "Unknown"}
                         </span>
-                        <span style={{ fontSize: 10, color: "#4a5578", flexShrink: 0 }}>{timeAgo(c.created_at)}</span>
+                        <span style={{ fontSize: 10, color: "#4a5578", flexShrink: 0 }}>{timeAgo(lastMsgTime)}</span>
                       </div>
+                      <p style={{ fontSize: 11, color: "#8e9bb5", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 3 }}>
+                        {c.last_message || "No messages yet"}
+                      </p>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                         <span style={{ padding: "2px 7px", borderRadius: 5, fontSize: 10, fontWeight: 600, background: ist.bg, color: ist.color }}>{ist.label}</span>
                         {isHum && <span style={{ padding: "1px 6px", borderRadius: 4, fontSize: 9, fontWeight: 700, background: "rgba(251,146,60,0.2)", color: "#fb923c" }}>HUMAN</span>}
