@@ -21,7 +21,7 @@ from typing import Optional
 
 import httpx
 import jwt
-from gotrue.errors import AuthApiError
+from supabase_auth.errors import AuthApiError
 from supabase import Client
 
 from app.config.settings import settings
