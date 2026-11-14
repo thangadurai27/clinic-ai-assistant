@@ -10,7 +10,9 @@ langchain-groq==0.2.3
 langgraph==0.2.60
 
 # Supabase
-supabase==2.10.0
+# >= 2.34.1 required to support new sb_publishable_ / sb_secret_ key formats
+# used by active Supabase projects. Earlier versions (e.g. 2.10.0) reject these.
+supabase>=2.34.1
 
 # Twilio (WhatsApp webhooks)
 twilio==9.4.4
