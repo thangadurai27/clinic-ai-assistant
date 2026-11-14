@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, type UseQueryOptions } from '@tanstack/react-query';
 import { api } from '@/services/api';
 import type { Conversation, Escalation, Appointment, DashboardStats, AnalyticsData, Patient, Notification } from '@/types';
 
@@ -47,7 +47,10 @@ export function usePatients() {
   });
 }
 
-export function useNotifications(limit?: number, options?: any) {
+export function useNotifications(
+  limit?: number,
+  options?: Partial<UseQueryOptions<Notification[], Error>>
+) {
   return useQuery<Notification[]>({
     queryKey: ['notifications', limit],
     queryFn: () => api.getNotifications(limit),

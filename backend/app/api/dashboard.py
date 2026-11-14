@@ -5,6 +5,9 @@ from __future__ import annotations
 
 import logging
 from fastapi import APIRouter, HTTPException, status, Depends
+from app.auth.dependencies import get_staff_user
+from app.demo import data as demo_data
+from app.demo.service import is_demo_user
 from app.schemas import DashboardStats, AnalyticsResponse
 from app.services.analytics_service import get_dashboard_stats, get_analytics
 from app.repositories import patient_repo
@@ -14,7 +17,9 @@ router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
 @router.get("/stats", response_model=DashboardStats)
-async def dashboard_stats() -> DashboardStats:
+async def dashboard_stats(user: dict = Depends(get_staff_user)) -> DashboardStats:
+    if is_demo_user(user):
+        return DashboardStats(**demo_data.dashboard_stats())
     try:
         return await get_dashboard_stats()
     except Exception as e:
@@ -23,15 +28,22 @@ async def dashboard_stats() -> DashboardStats:
 
 
 @router.get("/analytics", response_model=AnalyticsResponse)
-async def analytics(period_days: int = 14) -> AnalyticsResponse:
+async def analytics(period_days: int = 14, user: dict = Depends(get_staff_user)) -> AnalyticsResponse:
     """
     Get analytics data for charts.
-    
+
     Args:
         period_days: Number of days for daily chart (7, 14, 30, 90)
     """
     if period_days not in (7, 14, 30, 90):
         period_days = 14
+    if is_demo_user(user):
+        payload = demo_data.analytics_summary(period_days)
+        return AnalyticsResponse(
+            intent_distribution=payload["intent_distribution"],
+            daily_conversations=payload["daily_conversations"],
+            stats=DashboardStats(**payload["stats"]),
+        )
     try:
         return await get_analytics(period_days=period_days)
     except Exception as e:
@@ -40,7 +52,9 @@ async def analytics(period_days: int = 14) -> AnalyticsResponse:
 
 
 @router.get("/patients", status_code=status.HTTP_200_OK)
-async def list_patients(limit: int = 100) -> list:
+async def list_patients(limit: int = 100, user: dict = Depends(get_staff_user)) -> list:
+    if is_demo_user(user):
+        return demo_data.patients()[:limit]
     try:
         return await patient_repo.get_all(limit=limit)
     except Exception as e:

@@ -34,6 +34,8 @@ async def _get_current_user(authorization: Optional[str] = Header(None)) -> dict
     user = await auth_service.get_user_by_token(token)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired session")
+    if user.get("role") != "patient":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Patient access required")
     return user
 
 

@@ -1,8 +1,7 @@
 /**
  * Authentication utilities and API calls
  */
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8001/api/v1";
+import { API_BASE } from "@/lib/apiBase";
 
 export interface User {
   id: string;
@@ -15,6 +14,7 @@ export interface User {
   is_verified: boolean;
   last_login?: string;
   created_at: string;
+  is_demo?: boolean;
 }
 
 export interface AuthResponse {
@@ -24,6 +24,41 @@ export interface AuthResponse {
   access_token?: string;
   refresh_token?: string;
   expires_at?: number;
+}
+
+export interface DemoConfig {
+  enabled: boolean;
+  email: string;
+  password: string;
+  name?: string;
+  role?: string;
+  read_only: boolean;
+}
+
+export class AuthApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "AuthApiError";
+    this.status = status;
+  }
+}
+
+async function readErrorMessage(res: Response, fallback: string): Promise<string> {
+  const raw = await res.text().catch(() => "");
+  if (!raw) return fallback;
+
+  try {
+    const payload = JSON.parse(raw);
+    const detail = payload?.detail ?? payload?.message ?? payload?.error;
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (detail) return JSON.stringify(detail);
+  } catch {
+    // plain-text response
+  }
+
+  return raw.trim() || fallback;
 }
 
 // Sync user role to a cookie so Next.js middleware can read it (middleware runs server-side)
@@ -59,68 +94,63 @@ class AuthAPI {
     full_name: string;
     phone?: string;
   }): Promise<AuthResponse> {
-    console.log("[AuthAPI] Register called with payload:", data);
-    console.log("[AuthAPI] API_BASE:", API_BASE);
-    const url = `${API_BASE}/auth/register`;
-    console.log("[AuthAPI] Making request to:", url);
-    
+    let res: Response;
     try {
-      const res = await fetch(url, {
+      res = await fetch(`${API_BASE}/auth/register`, {
         method: "POST",
         headers: this.getHeaders(),
         body: JSON.stringify(data),
       });
-
-      console.log("[AuthAPI] Register response status:", res.status);
-      
-      if (!res.ok) {
-        let errorDetail = "Registration failed. Please try again.";
-        try {
-          const error = await res.json();
-          console.error("[AuthAPI] Register error JSON:", error);
-          // Try to extract error details from different possible structures
-          if (error.detail) {
-            errorDetail = typeof error.detail === "string" ? error.detail : JSON.stringify(error.detail);
-          } else if (error.message) {
-            errorDetail = error.message;
-          } else if (error.error) {
-            errorDetail = error.error;
-          } else {
-            errorDetail = JSON.stringify(error);
-          }
-        } catch (parseErr) {
-          console.error("[AuthAPI] Failed to parse error response:", parseErr);
-          const textError = await res.text().catch(() => "");
-          console.error("[AuthAPI] Error response text:", textError);
-          if (textError) {
-            errorDetail = textError;
-          }
-        }
-        console.error("[AuthAPI] Final error detail:", errorDetail);
-        throw new Error(errorDetail);
-      }
-
-      const result = await res.json();
-      console.log("[AuthAPI] Register success:", result);
-      return result;
-    } catch (err) {
-      console.error("[AuthAPI] Register request failed:", err);
-      throw err;
+    } catch {
+      throw new AuthApiError(
+        "Unable to reach the authentication service. Please try again shortly.",
+        0
+      );
     }
+
+    if (!res.ok) {
+      throw new AuthApiError(
+        await readErrorMessage(res, "Registration failed. Please try again."),
+        res.status
+      );
+    }
+
+    return res.json();
   }
 
   async login(email: string, password: string): Promise<AuthResponse> {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: this.getHeaders(),
-      body: JSON.stringify({ email, password }),
-    });
-
-    if (!res.ok) {
-      const error = await res.json().catch(() => ({ detail: "Invalid credentials" }));
-      throw new Error(error.detail);
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}/auth/login`, {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify({ email, password }),
+      });
+    } catch {
+      throw new AuthApiError(
+        "Unable to reach the authentication service. Please try again shortly.",
+        0
+      );
     }
 
+    if (!res.ok) {
+      throw new AuthApiError(
+        await readErrorMessage(res, "Invalid email or password"),
+        res.status
+      );
+    }
+
+    return res.json();
+  }
+
+  async getDemoConfig(): Promise<DemoConfig> {
+    const res = await fetch(`${API_BASE}/auth/demo-config`, {
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      throw new AuthApiError("Demo configuration unavailable", res.status);
+    }
     return res.json();
   }
 
@@ -151,7 +181,10 @@ class AuthAPI {
     });
 
     if (!res.ok) {
-      throw new Error("Failed to get current user");
+      throw new AuthApiError(
+        await readErrorMessage(res, "Failed to get current user"),
+        res.status
+      );
     }
 
     return res.json();

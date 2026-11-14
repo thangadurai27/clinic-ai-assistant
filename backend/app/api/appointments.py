@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
+from app.auth.dependencies import get_staff_user, get_staff_user_for_write
+from app.demo import data as demo_data
+from app.demo.service import is_demo_user
 from app.repositories import appointment_repo, notification_repo
 from app.schemas import AppointmentCreate, AppointmentRead, NotificationType
 from app.db.supabase_client import get_supabase
@@ -20,7 +23,7 @@ class AppointmentStatusUpdate(BaseModel):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_appointment(data: AppointmentCreate) -> dict:
+async def create_appointment(data: AppointmentCreate, user: dict = Depends(get_staff_user_for_write)) -> dict:
     try:
         result = await appointment_repo.create(data)
         
@@ -45,12 +48,21 @@ async def list_appointments(
     limit: int = 100,
     patient_id: Optional[str] = None,
     doctor_id:  Optional[str] = None,
+    user: dict = Depends(get_staff_user),
 ) -> list:
     """
     List appointments with optional filters:
     - patient_id: filter for a specific patient (patient portal)
     - doctor_id:  filter for a specific doctor (doctor dashboard)
     """
+    if is_demo_user(user):
+        rows = demo_data.appointments()
+        if patient_id:
+            rows = [row for row in rows if row["patient_id"] == patient_id]
+        if doctor_id:
+            rows = [row for row in rows if row.get("doctor_id") == doctor_id]
+        return rows[:limit]
+
     try:
         db = get_supabase()
         query = (
@@ -72,7 +84,11 @@ async def list_appointments(
 
 
 @router.patch("/{appointment_id}/status", status_code=status.HTTP_200_OK)
-async def update_appointment_status(appointment_id: str, body: AppointmentStatusUpdate) -> dict:
+async def update_appointment_status(
+    appointment_id: str,
+    body: AppointmentStatusUpdate,
+    user: dict = Depends(get_staff_user_for_write),
+) -> dict:
     """Update appointment status (confirmed, cancelled, completed, rescheduled)."""
     allowed = {"scheduled", "confirmed", "cancelled", "completed", "rescheduled"}
     if body.status not in allowed:
@@ -108,8 +124,14 @@ async def update_appointment_status(appointment_id: str, body: AppointmentStatus
 
 
 @router.get("/{appointment_id}", status_code=status.HTTP_200_OK)
-async def get_appointment(appointment_id: str) -> dict:
+async def get_appointment(appointment_id: str, user: dict = Depends(get_staff_user)) -> dict:
     """Get a specific appointment by ID."""
+    if is_demo_user(user):
+        for row in demo_data.appointments():
+            if row["id"] == appointment_id:
+                return row
+        raise HTTPException(status_code=404, detail="Demo appointment not found")
+
     try:
         db = get_supabase()
         res = (

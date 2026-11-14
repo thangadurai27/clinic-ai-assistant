@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.auth.dependencies import get_staff_user, get_staff_user_for_write
+from app.demo.service import is_demo_user
 from app.schemas import ReminderCreate, NotificationType
 from app.repositories import reminder_repo, notification_repo
 from app.db.supabase_client import get_supabase
@@ -15,7 +17,10 @@ router = APIRouter(prefix="/reminders", tags=["Reminders"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_reminder(data: ReminderCreate) -> dict:
+async def create_reminder(
+    data: ReminderCreate,
+    user: dict = Depends(get_staff_user_for_write),
+) -> dict:
     try:
         result = await reminder_repo.create(data)
         
@@ -37,8 +42,14 @@ async def create_reminder(data: ReminderCreate) -> dict:
 
 
 @router.get("/pending", status_code=status.HTTP_200_OK)
-async def get_pending_reminders(patient_id: Optional[str] = None) -> list:
+async def get_pending_reminders(
+    patient_id: Optional[str] = None,
+    user: dict = Depends(get_staff_user),
+) -> list:
     """Get pending reminders, optionally filtered by patient."""
+    if is_demo_user(user):
+        # Never expose real reminder data to the public demo account.
+        return []
     try:
         if patient_id:
             db = get_supabase()

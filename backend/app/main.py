@@ -3,6 +3,7 @@ FastAPI application entry point.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -12,6 +13,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config.settings import settings
+from app.demo.service import demo_enabled, ensure_demo_user_sync
 from app.utils.logger import configure_logging
 from app.api import api_router
 from app.services.email_scheduler import start_email_scheduler, stop_email_scheduler
@@ -34,6 +36,17 @@ async def lifespan(app: FastAPI):
     logger.info("-" * 50)
 
     start_email_scheduler()
+
+    if demo_enabled():
+        # Idempotent and non-fatal: a temporary Supabase outage must not stop
+        # the API from starting, and an existing demo password is not reset.
+        try:
+            profile = await asyncio.wait_for(asyncio.to_thread(ensure_demo_user_sync), timeout=25)
+            logger.info("Public demo account ready: %s (%s)", profile.get("email"), profile.get("role"))
+        except Exception as exc:
+            logger.error("Public demo account provisioning failed at startup: %s", exc)
+    else:
+        logger.info("Public demo mode is disabled (DEMO_MODE_ENABLED=false)")
 
     yield
 

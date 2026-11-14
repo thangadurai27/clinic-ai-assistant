@@ -1,14 +1,15 @@
 'use client';
 
-import { QueryClient, QueryClientProvider as TanStackQueryClientProvider } from '@tanstack/react-query';
+import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { get, set, del } from 'idb-keyval';
 import { useState } from 'react';
+import type { PersistedClient, Persister } from '@tanstack/react-query-persist-client';
 
 // Create a custom IDB persister using idb-keyval
-function createIDBPersister(dbName: string = 'clinic-ai-query-cache', key: string = 'react-query-cache') {
+function createIDBPersister(key: string = 'react-query-cache'): Persister {
   return {
-    persistClient: async (client: any) => {
+    persistClient: async (client: PersistedClient) => {
       await set(key, client);
     },
     restoreClient: async () => {

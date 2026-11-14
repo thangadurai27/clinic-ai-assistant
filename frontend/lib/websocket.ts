@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { getWebSocketUrl } from '@/lib/apiBase';
 
 type WebSocketMessage = {
   type: string;
@@ -16,10 +17,7 @@ type WebSocketHook = {
   error: Error | null;
 };
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 
-  (process.env.NODE_ENV === 'production' 
-    ? 'wss://clinic-ai-backend-t38f.onrender.com/api/v1/ws' 
-    : 'ws://localhost:8001/api/v1/ws');
+const WS_URL = getWebSocketUrl();
 
 export function useWebSocket(clinicId: string = 'global'): WebSocketHook {
   const [ws, setWs] = useState<WebSocket | null>(null);
@@ -29,10 +27,13 @@ export function useWebSocket(clinicId: string = 'global'): WebSocketHook {
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const connectRef = useRef<(() => void) | null>(null);
+  const closedRef = useRef(false);
   const MAX_RECONNECT_ATTEMPTS = 10;
 
   // Use a ref to hold the connect function to avoid circular dependency issues
   const connect = useCallback(() => {
+    if (closedRef.current || !WS_URL) return;
+
     // Clear any existing reconnect timeout
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
@@ -54,6 +55,7 @@ export function useWebSocket(clinicId: string = 'global'): WebSocketHook {
       newWs.onclose = (event) => {
         console.log(`[WebSocket] Disconnected: ${event.code} ${event.reason}`);
         setIsConnected(false);
+        if (closedRef.current) return;
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
           const timeout = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
           console.log(`[WebSocket] Reconnecting in ${timeout / 1000}s (attempt ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
@@ -101,9 +103,11 @@ export function useWebSocket(clinicId: string = 'global'): WebSocketHook {
   }, [ws, isConnected]);
 
   useEffect(() => {
+    closedRef.current = false;
     connect();
 
     return () => {
+      closedRef.current = true;
       if (ws) {
         ws.close();
       }

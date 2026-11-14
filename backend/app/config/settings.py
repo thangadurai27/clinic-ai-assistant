@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
+    # Optional: used only as a local JWT verification fallback when the Auth API
+    # is temporarily unreachable. Never exposed to the frontend.
+    SUPABASE_JWT_SECRET: Optional[str] = None
 
     # LangChain / LangSmith (optional)
     LANGCHAIN_API_KEY: Optional[str] = None
@@ -54,19 +57,26 @@ class Settings(BaseSettings):
     # Safety
     CONFIDENCE_THRESHOLD: float = 0.6
 
+    # Public demo account (credentials are deliberately public)
+    DEMO_MODE_ENABLED: bool = True
+    DEMO_USER_EMAIL: str = "demo@gmail.com"
+    DEMO_USER_PASSWORD: str = "demo123"
+    DEMO_USER_NAME: str = "Demo Receptionist"
+    DEMO_USER_PHONE: str = "+1-555-0100"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
-    @field_validator("DEBUG", mode="before")
+    @field_validator("DEBUG", "DEMO_MODE_ENABLED", mode="before")
     @classmethod
-    def parse_debug(cls, value: Any) -> bool:
-        """Accept common deployment-style DEBUG values from shell environments."""
+    def parse_bool(cls, value: Any) -> bool:
+        """Accept common deployment-style boolean values from shell environments."""
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
             normalized = value.strip().lower()
-            if normalized in {"1", "true", "yes", "on", "debug", "development", "dev"}:
+            if normalized in {"1", "true", "yes", "on", "enabled", "debug", "development", "dev"}:
                 return True
-            if normalized in {"0", "false", "no", "off", "release", "production", "prod"}:
+            if normalized in {"0", "false", "no", "off", "disabled", "release", "production", "prod"}:
                 return False
         return bool(value)
 

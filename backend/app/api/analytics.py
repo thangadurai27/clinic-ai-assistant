@@ -7,8 +7,11 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
+from app.auth.dependencies import get_staff_user
+from app.demo import data as demo_data
+from app.demo.service import is_demo_user
 from app.services import analytics_service
 from app.repositories import conversation_repo
 
@@ -17,8 +20,13 @@ router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
 
 @router.get("")
-async def get_analytics_summary(period_days: int = Query(30, ge=7, le=365)):
+async def get_analytics_summary(
+    period_days: int = Query(30, ge=7, le=365),
+    user: dict = Depends(get_staff_user),
+):
     """Get complete analytics summary including all data needed for frontend."""
+    if is_demo_user(user):
+        return demo_data.analytics_payload(period_days)
     try:
         stats = await analytics_service.get_dashboard_stats()
         perf = await analytics_service.get_performance_metrics()
@@ -60,8 +68,10 @@ async def get_analytics_summary(period_days: int = Query(30, ge=7, le=365)):
 
 
 @router.get("/dashboard")
-async def get_dashboard_analytics():
+async def get_dashboard_analytics(user: dict = Depends(get_staff_user)):
     """Get high-level dashboard metrics."""
+    if is_demo_user(user):
+        return demo_data.dashboard_stats()
     try:
         return await analytics_service.get_dashboard_stats()
     except Exception as e:
@@ -70,8 +80,13 @@ async def get_dashboard_analytics():
 
 
 @router.get("/intents")
-async def get_intent_analytics(period_days: int = Query(30, ge=7, le=365)):
+async def get_intent_analytics(
+    period_days: int = Query(30, ge=7, le=365),
+    user: dict = Depends(get_staff_user),
+):
     """Get intent distribution analytics."""
+    if is_demo_user(user):
+        return demo_data.analytics_summary(period_days)["intent_distribution"]
     try:
         data = await analytics_service.get_analytics(period_days=period_days)
         return data.intent_distribution
@@ -81,8 +96,10 @@ async def get_intent_analytics(period_days: int = Query(30, ge=7, le=365)):
 
 
 @router.get("/messages")
-async def get_message_analytics():
+async def get_message_analytics(user: dict = Depends(get_staff_user)):
     """Get message volume and breakdown analytics."""
+    if is_demo_user(user):
+        return demo_data.analytics_summary()["messages"]
     try:
         return await analytics_service.get_message_stats()
     except Exception as e:
@@ -91,8 +108,10 @@ async def get_message_analytics():
 
 
 @router.get("/performance")
-async def get_performance_analytics():
+async def get_performance_analytics(user: dict = Depends(get_staff_user)):
     """Get AI performance and resolution analytics."""
+    if is_demo_user(user):
+        return demo_data.analytics_summary()["performance"]
     try:
         return await analytics_service.get_performance_metrics()
     except Exception as e:
@@ -101,8 +120,10 @@ async def get_performance_analytics():
 
 
 @router.get("/channels")
-async def get_channel_analytics():
+async def get_channel_analytics(user: dict = Depends(get_staff_user)):
     """Get channel usage analytics."""
+    if is_demo_user(user):
+        return demo_data.analytics_summary()["channels"]
     try:
         return await analytics_service.get_channel_usage()
     except Exception as e:
@@ -111,8 +132,10 @@ async def get_channel_analytics():
 
 
 @router.get("/doctors")
-async def get_doctor_analytics():
+async def get_doctor_analytics(user: dict = Depends(get_staff_user)):
     """Get doctor workload and volume analytics."""
+    if is_demo_user(user):
+        return [{"name": doctor["name"], "total": 18, "completed": 14} for doctor in demo_data.doctors()]
     try:
         return await analytics_service.get_doctor_stats()
     except Exception as e:
@@ -121,9 +144,11 @@ async def get_doctor_analytics():
 
 
 @router.get("/export")
-async def export_analytics(format: str = "json"):
+async def export_analytics(format: str = "json", user: dict = Depends(get_staff_user)):
     """Export analytics data."""
-    # Simplified export, just returns all stats as JSON for now
+    if is_demo_user(user):
+        payload = demo_data.analytics_summary()
+        return {**payload, "exported_at": datetime.utcnow().isoformat(), "demo": True}
     try:
         stats = await analytics_service.get_dashboard_stats()
         perf = await analytics_service.get_performance_metrics()

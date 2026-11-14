@@ -1,9 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Sparkles } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { authAPI, type DemoConfig } from "@/lib/auth";
+
+const FALLBACK_DEMO: DemoConfig = {
+  enabled: true,
+  email: "demo@gmail.com",
+  password: "demo123",
+  name: "Demo Receptionist",
+  role: "receptionist",
+  read_only: true,
+};
 
 const inputStyle: React.CSSProperties = {
   width: "100%",
@@ -35,8 +45,26 @@ export default function LoginPage() {
   const [showPw,   setShowPw]   = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
+  const [demo,     setDemo]     = useState<DemoConfig>(FALLBACK_DEMO);
+  const [demoLoading, setDemoLoading] = useState(false);
 
   const { login } = useAuth();
+
+  useEffect(() => {
+    let cancelled = false;
+    authAPI
+      .getDemoConfig()
+      .then((config) => {
+        if (!cancelled) setDemo({ ...FALLBACK_DEMO, ...config });
+      })
+      .catch(() => {
+        // Keep the fallback credentials visible so the demo remains usable
+        // even if the config endpoint is briefly unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -48,6 +76,21 @@ export default function LoginPage() {
       setError((err as Error).message || "Invalid credentials. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDemoLogin = async () => {
+    setError("");
+    setDemoLoading(true);
+    setEmail(demo.email);
+    setPassword(demo.password);
+    try {
+      // Uses the exact same real backend login endpoint and token flow.
+      await login(demo.email, demo.password);
+    } catch (err: unknown) {
+      setError((err as Error).message || "Demo login failed. Please try again.");
+    } finally {
+      setDemoLoading(false);
     }
   };
 
@@ -105,6 +148,81 @@ export default function LoginPage() {
             Access your KLM AI Clinic operations dashboard
           </p>
 
+          {/* Public demo access */}
+          {demo.enabled && (
+            <div
+              style={{
+                marginBottom: 24,
+                padding: "18px 18px 16px",
+                borderRadius: 12,
+                background:
+                  "linear-gradient(135deg, rgba(99,102,241,0.14) 0%, rgba(124,58,237,0.08) 100%)",
+                border: "1px solid rgba(129,140,248,0.38)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  marginBottom: 8,
+                }}
+              >
+                <Sparkles size={16} style={{ color: "#a5b4fc" }} />
+                <span
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 700,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "#c7d2fe",
+                  }}
+                >
+                  Public demo
+                </span>
+              </div>
+              <p style={{ fontSize: 13, color: "#94a3b8", lineHeight: 1.5, marginBottom: 12 }}>
+                Explore the receptionist dashboard with isolated sample data.
+                The demo account is <strong style={{ color: "#cbd5e1" }}>read-only</strong> and
+                never touches real patient records.
+              </p>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "auto 1fr",
+                  rowGap: 4,
+                  columnGap: 10,
+                  fontSize: 13,
+                  marginBottom: 14,
+                }}
+              >
+                <span style={{ color: "#64748b" }}>Email</span>
+                <code style={{ color: "#e2e8f0" }}>{demo.email}</code>
+                <span style={{ color: "#64748b" }}>Password</span>
+                <code style={{ color: "#e2e8f0" }}>{demo.password}</code>
+              </div>
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                disabled={loading || demoLoading}
+                style={{
+                  width: "100%",
+                  height: 46,
+                  borderRadius: 10,
+                  border: "1px solid rgba(165,180,252,0.55)",
+                  background: "rgba(99,102,241,0.18)",
+                  color: "#e0e7ff",
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: loading || demoLoading ? "not-allowed" : "pointer",
+                  opacity: loading || demoLoading ? 0.65 : 1,
+                }}
+              >
+                {demoLoading ? "Signing in as demo..." : "Login as Demo User"}
+              </button>
+            </div>
+          )}
+
           {/* Error */}
           {error && (
             <div className="animate-fade-in"
@@ -128,14 +246,14 @@ export default function LoginPage() {
           >
             {/* Email */}
             <div>
-              <label style={labelStyle}>System Admin Email</label>
+              <label style={labelStyle}>Email address</label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g., manager@institution.com"
+                placeholder="you@clinic.com"
                 required
-                disabled={loading}
+                disabled={loading || demoLoading}
                 style={{ ...inputStyle, opacity: loading ? 0.6 : 1 }}
                 onFocus={(e) =>
                   (e.target.style.borderColor = "rgba(99,102,241,0.7)")
@@ -178,7 +296,7 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  disabled={loading}
+                  disabled={loading || demoLoading}
                   style={{
                     ...inputStyle,
                     paddingRight: 44,
@@ -215,7 +333,7 @@ export default function LoginPage() {
             {/* Submit */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || demoLoading}
               style={{
                 width: "100%",
                 height: 52,

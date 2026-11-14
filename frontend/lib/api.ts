@@ -1,11 +1,7 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient, UseQueryResult, UseMutationResult } from '@tanstack/react-query';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 
-  (process.env.NODE_ENV === 'production' 
-    ? 'https://clinic-ai-backend-t38f.onrender.com/api/v1' 
-    : 'http://localhost:8001/api/v1');
+import { API_BASE } from '@/lib/apiBase';
 
 // Helper function for API requests
 async function apiRequest<T = unknown>(

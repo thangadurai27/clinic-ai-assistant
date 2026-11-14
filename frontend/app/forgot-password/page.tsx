@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Mail, ArrowLeft, KeyRound, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { authAPI } from "@/lib/auth";
 
 export default function ForgotPasswordPage() {
     const [email, setEmail] = useState("");
@@ -16,18 +17,9 @@ export default function ForgotPasswordPage() {
 
         setLoading(true);
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/auth/forgot-password`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ email }),
-            });
-
-            if (res.ok) {
-                setSent(true);
-                toast.success("Reset link sent!");
-            } else {
-                toast.error("Failed to send reset link.");
-            }
+            await authAPI.forgotPassword(email);
+            setSent(true);
+            toast.success("Reset link sent!");
         } catch {
             toast.error("An error occurred. Please try again.");
         } finally {

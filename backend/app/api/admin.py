@@ -6,11 +6,14 @@ from __future__ import annotations
 
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from pydantic import BaseModel, EmailStr
 
 from app.db.supabase_client import get_supabase
 from app.auth import auth_service
+from app.auth.dependencies import get_staff_user, reject_demo
+from app.demo import data as demo_data
+from app.demo.service import is_demo_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/admin", tags=["Users"])
@@ -25,8 +28,14 @@ class ProfileUpdateRequest(BaseModel):
 async def list_users(
     role: Optional[str] = None,
     limit: int = 100,
+    user: dict = Depends(get_staff_user),
 ) -> list:
     """List users — used by receptionist to see patients."""
+    if is_demo_user(user):
+        rows = demo_data.admin_users()
+        if role:
+            rows = [row for row in rows if row["role"] == role]
+        return rows[:limit]
     try:
         db = get_supabase()
         query = db.table("users").select("*").limit(limit).order("created_at", desc=True)
@@ -40,8 +49,10 @@ async def list_users(
 
 
 @router.get("/system-stats", status_code=status.HTTP_200_OK)
-async def system_stats() -> dict:
+async def system_stats(user: dict = Depends(get_staff_user)) -> dict:
     """Basic system stats for the dashboard."""
+    if is_demo_user(user):
+        return demo_data.system_stats()
     try:
         db = get_supabase()
         users_res = db.table("users").select("role", count="exact").execute()
@@ -71,6 +82,7 @@ async def update_profile(
     user = await auth_service.get_user_by_token(token)
     if not user:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    reject_demo(user, "change the demo profile")
 
     try:
         db = get_supabase()

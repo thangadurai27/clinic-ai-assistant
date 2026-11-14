@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { authAPI, tokenManager, User, getDashboardRoute } from "@/lib/auth";
+import { authAPI, tokenManager, User, getDashboardRoute, AuthApiError } from "@/lib/auth";
 
 interface AuthContextType {
   user: User | null;
@@ -16,6 +16,7 @@ interface AuthContextType {
   }) => Promise<void>;
   logout: () => Promise<void>;
   isAuthenticated: boolean;
+  isDemo: boolean;
   hasRole: (...roles: string[]) => boolean;
 }
 
@@ -43,6 +44,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Load user on mount
   useEffect(() => {
     const loadUser = async () => {
+      const clearSession = () => {
+        tokenManager.clear();
+        syncUserCookie(null);
+        setUser(null);
+      };
+
       try {
         // Try stored user first for instant render
         const storedUser = tokenManager.getUser();
@@ -52,28 +59,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         const token = tokenManager.getToken();
-        if (token) {
-          try {
-            const { user: userData } = await authAPI.getCurrentUser(token);
-            setUser(userData);
-            tokenManager.setUser(userData);
-            syncUserCookie(userData);
-          } catch (err) {
-            console.warn("Failed to get current user from API, using stored user if available:", err);
-            // Don't clear everything—try to use stored user!
-          }
-        } else {
+        if (!token) {
           syncUserCookie(null);
+          return;
+        }
+
+        try {
+          const { user: userData } = await authAPI.getCurrentUser(token);
+          setUser(userData);
+          tokenManager.setUser(userData);
+          syncUserCookie(userData);
+        } catch (err) {
+          const status = err instanceof AuthApiError ? err.status : 0;
+
+          // A rejected token is recoverable: refresh once, then retry.
+          if (status === 401) {
+            const refreshToken = tokenManager.getRefreshToken();
+            if (!refreshToken) {
+              clearSession();
+              return;
+            }
+            try {
+              const refreshed = await authAPI.refreshToken(refreshToken);
+              if (!refreshed.access_token) {
+                clearSession();
+                return;
+              }
+              tokenManager.setToken(refreshed.access_token);
+              if (refreshed.refresh_token) {
+                tokenManager.setRefreshToken(refreshed.refresh_token);
+              }
+
+              if (refreshed.user) {
+                setUser(refreshed.user);
+                tokenManager.setUser(refreshed.user);
+                syncUserCookie(refreshed.user);
+              } else {
+                const { user: userData } = await authAPI.getCurrentUser(
+                  refreshed.access_token
+                );
+                setUser(userData);
+                tokenManager.setUser(userData);
+                syncUserCookie(userData);
+              }
+            } catch (refreshErr) {
+              console.warn("Session refresh failed; signing out locally:", refreshErr);
+              clearSession();
+            }
+            return;
+          }
+
+          // Network/backend outage: keep the stored user so the app can still
+          // render cached dashboard data rather than logging the user out.
+          console.warn("Failed to refresh current user from API:", err);
         }
       } catch (error) {
         console.error("Failed to load user:", error);
-        // Don't clear everything unless we have to!
       } finally {
         setLoading(false);
       }
     };
 
-    loadUser();
+    void loadUser();
   }, []);
 
   const login = useCallback(
@@ -129,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(response.message || "Registration failed");
       }
     },
-    [login]
+    [login, router]
   );
 
   const logout = useCallback(async () => {
@@ -156,6 +203,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [user]
   );
 
+  const isDemo = !!user?.is_demo;
+
   return (
     <AuthContext.Provider
       value={{
@@ -165,6 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         logout,
         isAuthenticated: !!user,
+        isDemo,
         hasRole,
       }}
     >

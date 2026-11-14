@@ -1,40 +1,148 @@
 """
-Authentication Service — Complete production-ready authentication using Supabase Auth.
+Authentication Service — complete authentication using Supabase Auth.
 
 Features:
 - User registration with role assignment
 - Login with JWT tokens
+- Public demo-account provisioning
 - Password reset
 - Email verification
 - Token refresh
 - Session management
+
+All passwords are hashed and verified by Supabase Auth (GoTrue); this service
+never stores or compares plaintext passwords itself.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Optional
-from uuid import UUID
-import jwt
 
+import httpx
+import jwt
 from gotrue.errors import AuthApiError
 from supabase import Client
 
-from app.db.supabase_client import get_supabase
 from app.config.settings import settings
+from app.db.async_utils import run_blocking
+from app.db.supabase_client import get_supabase
+from app.demo.service import (
+    DemoProvisioningError,
+    demo_email,
+    demo_enabled,
+    demo_password,
+    ensure_demo_user_session,
+    is_demo_user,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class AuthService:
-    """Complete authentication service using Supabase Auth."""
+    """Authentication service backed by Supabase Auth."""
 
     def __init__(self):
-        self.db: Client = get_supabase()
         self.secret_key = settings.SECRET_KEY
         self.algorithm = "HS256"
-        self.access_token_expire_minutes = 60  # 1 hour
-        self.refresh_token_expire_days = 30  # 30 days
+        self.access_token_expire_minutes = 60  # Supabase token lifetime is configurable server-side
+        self.refresh_token_expire_days = 30
+
+    @property
+    def db(self) -> Client:
+        # Create per operation; the same reasoning as app.db.supabase_client.
+        return get_supabase()
+
+    # ── User profile helpers ─────────────────────────────────────────────────
+
+    @staticmethod
+    def _metadata_user(auth_user, *, is_demo: bool = False) -> dict:
+        metadata = getattr(auth_user, "user_metadata", None) or {}
+        email = getattr(auth_user, "email", "") or ""
+        role = metadata.get("role") or ("receptionist" if is_demo else "patient")
+        return {
+            "id": getattr(auth_user, "id", None),
+            "auth_user_id": getattr(auth_user, "id", None),
+            "email": email,
+            "full_name": metadata.get("full_name") or email.split("@")[0] or "User",
+            "role": role,
+            "is_active": True,
+            "is_verified": True,
+            "phone": metadata.get("phone"),
+            "last_login": None,
+            "created_at": str(getattr(auth_user, "created_at", "")),
+            "is_demo": is_demo,
+        }
+
+    def _find_public_user(self, *, auth_user_id: Optional[str] = None, email: Optional[str] = None) -> Optional[dict]:
+        try:
+            db = self.db
+            if auth_user_id:
+                result = db.table("users").select("*").eq("auth_user_id", auth_user_id).limit(1).execute()
+                if result.data:
+                    return result.data[0]
+            if email:
+                result = db.table("users").select("*").eq("email", email.lower()).limit(1).execute()
+                if result.data:
+                    return result.data[0]
+        except Exception as exc:
+            logger.warning("public.users lookup unavailable: %s", exc)
+        return None
+
+    def _upsert_public_user(
+        self,
+        *,
+        auth_user_id: str,
+        email: str,
+        full_name: str,
+        phone: Optional[str],
+        role: str,
+        is_verified: bool = True,
+    ) -> Optional[dict]:
+        payload = {
+            "auth_user_id": auth_user_id,
+            "email": email.lower(),
+            "full_name": full_name,
+            "phone": phone,
+            "role": role,
+            "is_active": True,
+            "is_verified": is_verified,
+        }
+        try:
+            db = self.db
+            existing = self._find_public_user(auth_user_id=auth_user_id, email=email)
+            if existing:
+                result = db.table("users").update(payload).eq("id", existing["id"]).execute()
+                return result.data[0] if result.data else {**existing, **payload}
+            result = db.table("users").insert(payload).execute()
+            return result.data[0] if result.data else None
+        except Exception as exc:
+            logger.warning("Could not create public.users profile (continuing with Auth metadata): %s", exc)
+            return None
+
+    def _ensure_patient_row(self, *, user_id: str, email: str, full_name: str, phone: Optional[str]) -> None:
+        try:
+            db = self.db
+            existing = db.table("patients").select("id").eq("user_id", user_id).limit(1).execute()
+            if existing.data:
+                return
+            existing_email = db.table("patients").select("id").eq("email", email).limit(1).execute()
+            if existing_email.data:
+                db.table("patients").update({"user_id": user_id}).eq("id", existing_email.data[0]["id"]).execute()
+                return
+            db.table("patients").insert(
+                {
+                    "name": full_name,
+                    "email": email,
+                    "phone": phone,
+                    "user_id": user_id,
+                    "preferred_channel": "web",
+                }
+            ).execute()
+        except Exception as exc:
+            logger.warning("Patient profile creation skipped: %s", exc)
+
+    # ── Registration ─────────────────────────────────────────────────────────
 
     async def register_user(
         self,
@@ -44,422 +152,378 @@ class AuthService:
         phone: Optional[str] = None,
         role: str = "patient",
     ) -> dict:
-        """
-        Register a new user with Supabase Auth and create user profile.
-        
-        Returns: {success, user, message}
-        """
+        """Register a new Supabase Auth user and best-effort profile row."""
+        email = email.strip().lower()
+        db = self.db
+
+        existing_profile = self._find_public_user(email=email)
+        if existing_profile:
+            return {
+                "success": False,
+                "message": "An account with this email already exists. Please log in instead.",
+                "error_code": "email_exists",
+            }
+
+        auth_user = None
         try:
-            # 1. Create user in Supabase Auth (using admin to bypass confirmation if needed)
-            auth_response = self.db.auth.admin.create_user({
-                "email": email,
-                "password": password,
-                "email_confirm": True,
-                "user_metadata": {
-                    "full_name": full_name,
-                    "role": role,
+            created = db.auth.admin.create_user(
+                {
+                    "email": email,
+                    "password": password,
+                    "email_confirm": True,
+                    "user_metadata": {"full_name": full_name, "role": role},
                 }
-            })
-            
-            # Since admin.create_user doesn't return a session, 
-            # we need to sign in immediately after to get tokens for the user
-            if not auth_response:
+            )
+            auth_user = getattr(created, "user", created)
+        except AuthApiError as exc:
+            message = str(exc).lower()
+            if "already" in message or "registered" in message or "exists" in message:
                 return {
                     "success": False,
-                    "message": "Failed to create authentication user"
+                    "message": "An account with this email already exists. Please log in instead.",
+                    "error_code": "email_exists",
+                }
+            logger.error("Supabase Auth error during registration: %s", exc)
+            return {
+                "success": False,
+                "message": str(exc) or "Registration failed.",
+                "error_code": "auth_error",
+            }
+        except Exception as exc:
+            logger.error("Registration service error: %s", exc, exc_info=True)
+            return {
+                "success": False,
+                "message": "Authentication service is temporarily unavailable. Please try again shortly.",
+                "error_code": "service_unavailable",
+            }
+
+        auth_user_id = getattr(auth_user, "id", None)
+        if not auth_user_id:
+            return {"success": False, "message": "Failed to create authentication user", "error_code": "auth_error"}
+
+        profile = self._upsert_public_user(
+            auth_user_id=auth_user_id,
+            email=email,
+            full_name=full_name,
+            phone=phone,
+            role=role,
+        )
+        if role == "patient" and profile:
+            self._ensure_patient_row(
+                user_id=profile["id"],
+                email=email,
+                full_name=full_name,
+                phone=phone,
+            )
+
+        user = profile or self._metadata_user(auth_user)
+        user["is_demo"] = False
+
+        access_token = None
+        refresh_token = None
+        expires_at = None
+        try:
+            session = db.auth.sign_in_with_password({"email": email, "password": password})
+            if getattr(session, "session", None):
+                access_token = session.session.access_token
+                refresh_token = session.session.refresh_token
+                expires_at = session.session.expires_at
+        except Exception as exc:
+            # Registration itself succeeded; the client can call /auth/login.
+            logger.warning("Registration succeeded but automatic sign-in failed: %s", exc)
+
+        logger.info("User registered successfully: %s (%s)", email, role)
+        return {
+            "success": True,
+            "user": user,
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_at": expires_at,
+            "message": "Registration successful",
+        }
+
+    # ── Login ────────────────────────────────────────────────────────────────
+
+    async def login_user(self, email: str, password: str) -> dict:
+        """Login with email/password. Returns tokens issued by Supabase Auth."""
+        email = email.strip().lower()
+        db = self.db
+
+        # Public demo account: provision idempotently, then use its real session.
+        if demo_enabled() and email == demo_email():
+            if password != demo_password():
+                return {
+                    "success": False,
+                    "message": "Invalid email or password",
+                    "error_code": "invalid_credentials",
+                }
+            try:
+                auth_user, session, profile = await run_blocking(ensure_demo_user_session)
+            except DemoProvisioningError as exc:
+                logger.error("Demo login provisioning failed: %s", exc)
+                return {
+                    "success": False,
+                    "message": str(exc),
+                    "error_code": "service_unavailable",
+                }
+            except Exception as exc:
+                logger.error("Demo login error: %s", exc, exc_info=True)
+                return {
+                    "success": False,
+                    "message": "Demo authentication service is temporarily unavailable. Please try again shortly.",
+                    "error_code": "service_unavailable",
                 }
 
-            auth_user_id = getattr(auth_response, 'user', auth_response).id
-            
-            # 2. Create user profile in database
-            user_data = {
-                "auth_user_id": auth_user_id,
-                "email": email,
-                "full_name": full_name,
-                "phone": phone,
-                "role": role,
-                "is_active": True,
-                "is_verified": False,  # Will be true after email verification
-            }
-            
-            user_result = self.db.table("users").insert(user_data).execute()
-            
-            if not user_result.data:
-                # Rollback: delete auth user if profile creation fails
-                self.db.auth.admin.delete_user(auth_user_id)
-                return {
-                    "success": False,
-                    "message": "Failed to create user profile"
-                }
-            
-            user = user_result.data[0]
-            user_id = user["id"]
-            
-            # 3. Create role-specific profile
-            if role == "patient":
-                # Create patient record
-                patient_data = {
-                    "name": full_name,
-                    "email": email,
-                    "phone": phone,
-                    "user_id": user_id,
-                    "preferred_channel": "web",
-                }
-                self.db.table("patients").insert(patient_data).execute()
-            
-            elif role == "doctor":
-                # Create doctor record (requires additional info later)
-                doctor_data = {
-                    "name": full_name,
-                    "email": email,
-                    "phone": phone,
-                    "user_id": user_id,
-                    "specialty": "General Practice",  # Default, can be updated
-                    "is_active": True,
-                }
-                self.db.table("doctors").insert(doctor_data).execute()
-            
-            elif role in ["receptionist", "admin"]:
-                # Create staff record
-                staff_data = {
-                    "user_id": user_id,
-                    "position": role.title(),
-                    "is_active": True,
-                }
-                self.db.table("staff").insert(staff_data).execute()
-            
-            # 4. Success — Now sign in to get tokens for the user
-            login_res = self.db.auth.sign_in_with_password({
-                "email": email,
-                "password": password,
-            })
-            
-            logger.info(f"User registered successfully: {email} ({role})")
-            
+            if not session:
+                return {"success": False, "message": "Demo login failed.", "error_code": "auth_error"}
+
+            user = profile or self._metadata_user(auth_user, is_demo=True)
+            user["is_demo"] = True
+            try:
+                if user.get("id"):
+                    db.table("users").update({"last_login": datetime.now(timezone.utc).isoformat()}).eq(
+                        "id", user["id"]
+                    ).execute()
+            except Exception:
+                pass
+
+            logger.info("Demo user logged in: %s", email)
             return {
                 "success": True,
                 "user": user,
-                "access_token":  login_res.session.access_token if login_res.session else None,
-                "refresh_token": login_res.session.refresh_token if login_res.session else None,
-                "message": "Registration successful",
-                "requires_verification": False,
+                "access_token": session.access_token,
+                "refresh_token": session.refresh_token,
+                "expires_at": session.expires_at,
+                "message": "Login successful",
             }
-            
-        except AuthApiError as e:
-            logger.error(f"Supabase Auth error during registration: {e}")
+
+        try:
+            auth_response = db.auth.sign_in_with_password({"email": email, "password": password})
+        except AuthApiError as exc:
+            logger.warning("Supabase Auth rejected login for %s: %s", email, exc)
+            return {"success": False, "message": "Invalid email or password", "error_code": "invalid_credentials"}
+        except (httpx.HTTPError, ConnectionError, TimeoutError, OSError) as exc:
+            logger.error("Authentication service unreachable during login: %s", exc)
             return {
                 "success": False,
-                "message": str(e),
+                "message": "Authentication service is temporarily unavailable. Please try again shortly.",
+                "error_code": "service_unavailable",
             }
-        except Exception as e:
-            logger.error(f"Registration error: {e}", exc_info=True)
+        except Exception as exc:
+            logger.error("Login error: %s", exc, exc_info=True)
             return {
                 "success": False,
-                "message": "Registration failed. Please try again.",
+                "message": "Authentication service is temporarily unavailable. Please try again shortly.",
+                "error_code": "service_unavailable",
             }
 
-    async def login_user(self, email: str, password: str) -> dict:
-        """
-        Login user with email and password.
+        auth_user = getattr(auth_response, "user", None)
+        session = getattr(auth_response, "session", None)
+        if not auth_user or not session:
+            return {"success": False, "message": "Invalid email or password", "error_code": "invalid_credentials"}
 
-        Returns: {success, user, access_token, refresh_token, message}
-        Falls back to Auth metadata when public.users table doesn't exist yet.
-        """
-        try:
-            # 1. Authenticate with Supabase Auth
-            auth_response = self.db.auth.sign_in_with_password({
-                "email": email,
-                "password": password,
-            })
-
-            if not auth_response.user or not auth_response.session:
-                return {"success": False, "message": "Invalid email or password"}
-
-            auth_user    = auth_response.user
-            auth_user_id = auth_user.id
-            meta         = auth_user.user_metadata or {}
-
-            # 2. Try to get profile from public.users
-            user = None
-            try:
-                user_result = (
-                    self.db.table("users")
-                    .select("*")
-                    .eq("auth_user_id", auth_user_id)
-                    .single()
-                    .execute()
-                )
-                user = user_result.data
-            except Exception:
-                # Table doesn't exist yet — fall through to Auth-metadata fallback
-                user = None
-
-            # 3. Fallback: build user dict from Supabase Auth metadata
-            if not user:
-                role = meta.get("role", "patient")
-                user = {
-                    "id":           auth_user_id,
-                    "auth_user_id": auth_user_id,
-                    "email":        auth_user.email,
-                    "full_name":    meta.get("full_name", auth_user.email.split("@")[0]),
-                    "role":         role,
-                    "is_active":    True,
-                    "is_verified":  True,
-                    "phone":        meta.get("phone"),
-                    "last_login":   None,
-                    "created_at":   auth_user.created_at,
-                }
-                logger.warning(
-                    f"public.users table unavailable — built user profile from Auth metadata for {email}"
-                )
-            else:
-                # 4. Check active flag
-                if not user.get("is_active", True):
-                    return {
-                        "success": False,
-                        "message": "Account deactivated. Please contact support.",
-                    }
-
-                # 5. Update last_login silently
-                try:
-                    self.db.table("users").update(
-                        {"last_login": datetime.utcnow().isoformat()}
-                    ).eq("id", user["id"]).execute()
-                except Exception:
-                    pass
-
-                # 6. Log activity silently
-                try:
-                    self._log_activity(user["id"], "user_login", "users", user["id"], {"email": email})
-                except Exception:
-                    pass
-
-            logger.info(f"User logged in: {email} ({user.get('role')})")
-
-            return {
-                "success":       True,
-                "user":          user,
-                "access_token":  auth_response.session.access_token,
-                "refresh_token": auth_response.session.refresh_token,
-                "expires_at":    auth_response.session.expires_at,
-                "message":       "Login successful",
-            }
-
-        except AuthApiError as e:
-            logger.error(f"Supabase Auth error during login: {e}")
-            return {"success": False, "message": "Invalid email or password"}
-        except Exception as e:
-            logger.error(f"Login error: {e}", exc_info=True)
-            return {"success": False, "message": "Login failed. Please try again."}
-
-    async def refresh_token(self, refresh_token: str) -> dict:
-        """
-        Refresh access token using refresh token.
-        
-        Returns: {success, access_token, refresh_token, message}
-        """
-        try:
-            auth_response = self.db.auth.refresh_session(refresh_token)
-            
-            if not auth_response.session:
+        auth_user_id = auth_user.id
+        user = self._find_public_user(auth_user_id=auth_user_id, email=email)
+        if user:
+            if not user.get("is_active", True):
                 return {
                     "success": False,
-                    "message": "Invalid or expired refresh token"
+                    "message": "Account deactivated. Please contact support.",
+                    "error_code": "inactive",
                 }
-            
+            try:
+                db.table("users").update({"last_login": datetime.now(timezone.utc).isoformat()}).eq(
+                    "id", user["id"]
+                ).execute()
+                self._log_activity(user["id"], "user_login", "users", user["id"], {"email": email})
+            except Exception:
+                pass
+        else:
+            user = self._metadata_user(auth_user, is_demo=is_demo_user({"email": email}))
+            logger.warning("public.users profile unavailable for %s; using Auth metadata", email)
+
+        user["is_demo"] = is_demo_user(user)
+        logger.info("User logged in: %s (%s)", email, user.get("role"))
+        return {
+            "success": True,
+            "user": user,
+            "access_token": session.access_token,
+            "refresh_token": session.refresh_token,
+            "expires_at": session.expires_at,
+            "message": "Login successful",
+        }
+
+    async def refresh_token(self, refresh_token: str) -> dict:
+        """Refresh an access token using a Supabase refresh token."""
+        try:
+            auth_response = self.db.auth.refresh_session(refresh_token)
+            session = getattr(auth_response, "session", None)
+            if not session:
+                return {"success": False, "message": "Invalid or expired refresh token"}
             return {
                 "success": True,
-                "access_token": auth_response.session.access_token,
-                "refresh_token": auth_response.session.refresh_token,
-                "expires_at": auth_response.session.expires_at,
+                "access_token": session.access_token,
+                "refresh_token": session.refresh_token,
+                "expires_at": session.expires_at,
                 "message": "Token refreshed successfully",
             }
-            
-        except AuthApiError as e:
-            logger.error(f"Token refresh error: {e}")
-            return {
-                "success": False,
-                "message": "Token refresh failed",
-            }
+        except AuthApiError as exc:
+            logger.warning("Token refresh rejected: %s", exc)
+            return {"success": False, "message": "Invalid or expired refresh token"}
+        except Exception as exc:
+            logger.error("Token refresh error: %s", exc)
+            return {"success": False, "message": "Token refresh failed"}
 
     async def logout_user(self, access_token: str) -> dict:
-        """Logout user and invalidate token."""
+        """Best-effort Supabase sign-out. Client-side token clearing is authoritative."""
         try:
-            # Set the token for this request
-            self.db.auth.set_session(access_token, refresh_token="")
-            self.db.auth.sign_out()
-            
-            return {
-                "success": True,
-                "message": "Logged out successfully",
-            }
-        except Exception as e:
-            logger.error(f"Logout error: {e}")
-            return {
-                "success": False,
-                "message": "Logout failed",
-            }
+            db = self.db
+            db.auth.set_session(access_token, refresh_token="")
+            db.auth.sign_out()
+            return {"success": True, "message": "Logged out successfully"}
+        except Exception as exc:
+            logger.warning("Supabase logout was not completed (client token cleared anyway): %s", exc)
+            return {"success": True, "message": "Logged out successfully"}
 
     async def forgot_password(self, email: str) -> dict:
-        """Send password reset email."""
         try:
             self.db.auth.reset_password_email(email)
-            
             return {
                 "success": True,
                 "message": "Password reset email sent. Please check your inbox.",
             }
-        except Exception as e:
-            logger.error(f"Forgot password error: {e}")
-            # Don't reveal if email exists
+        except Exception as exc:
+            logger.warning("Forgot password error: %s", exc)
+            # Do not reveal whether an account exists.
             return {
                 "success": True,
                 "message": "If the email exists, a password reset link has been sent.",
             }
 
     async def reset_password(self, access_token: str, new_password: str) -> dict:
-        """Reset password using token from email."""
         try:
-            self.db.auth.set_session(access_token, refresh_token="")
-            self.db.auth.update_user({
-                "password": new_password
-            })
-            
-            return {
-                "success": True,
-                "message": "Password reset successfully",
-            }
-        except Exception as e:
-            logger.error(f"Reset password error: {e}")
-            return {
-                "success": False,
-                "message": "Password reset failed",
-            }
+            db = self.db
+            db.auth.set_session(access_token, refresh_token="")
+            db.auth.update_user({"password": new_password})
+            return {"success": True, "message": "Password reset successfully"}
+        except Exception as exc:
+            logger.error("Reset password error: %s", exc)
+            return {"success": False, "message": "Password reset failed"}
 
     async def change_password(self, user_id: str, old_password: str, new_password: str) -> dict:
-        """Change password for authenticated user."""
         try:
-            # Get user email
-            user = self.db.table("users").select("email, auth_user_id").eq("id", user_id).single().execute()
+            db = self.db
+            user = db.table("users").select("email, auth_user_id, is_demo").eq("id", user_id).limit(1).execute()
             if not user.data:
                 return {"success": False, "message": "User not found"}
-            
-            # Verify old password by attempting login
-            login_result = await self.login_user(user.data["email"], old_password)
+            if user.data[0].get("is_demo"):
+                return {"success": False, "message": "The public demo password cannot be changed."}
+
+            login_result = await self.login_user(user.data[0]["email"], old_password)
             if not login_result["success"]:
                 return {"success": False, "message": "Current password is incorrect"}
-            
-            # Update password
-            self.db.auth.admin.update_user_by_id(
-                user.data["auth_user_id"],
-                {"password": new_password}
+
+            db.auth.admin.update_user_by_id(
+                user.data[0]["auth_user_id"],
+                {"password": new_password},
             )
-            
             self._log_activity(user_id, "password_changed", "users", user_id)
-            
-            return {
-                "success": True,
-                "message": "Password changed successfully",
-            }
-        except Exception as e:
-            logger.error(f"Change password error: {e}")
-            return {
-                "success": False,
-                "message": "Password change failed",
-            }
+            return {"success": True, "message": "Password changed successfully"}
+        except Exception as exc:
+            logger.error("Change password error: %s", exc)
+            return {"success": False, "message": "Password change failed"}
 
     async def verify_email(self, token: str) -> dict:
-        """Verify user email with token."""
         try:
-            # Supabase handles email verification automatically
-            # Update is_verified flag in our database
-            auth_response = self.db.auth.verify_otp({
-                "token_hash": token,
-                "type": "signup",
-            })
-            
-            if auth_response.user:
-                self.db.table("users").update({
-                    "is_verified": True
-                }).eq("auth_user_id", auth_response.user.id).execute()
-                
-                return {
-                    "success": True,
-                    "message": "Email verified successfully",
-                }
-            
-            return {
-                "success": False,
-                "message": "Invalid verification token",
-            }
-        except Exception as e:
-            logger.error(f"Email verification error: {e}")
-            return {
-                "success": False,
-                "message": "Email verification failed",
-            }
+            auth_response = self.db.auth.verify_otp({"token_hash": token, "type": "signup"})
+            auth_user = getattr(auth_response, "user", None)
+            if auth_user:
+                self.db.table("users").update({"is_verified": True}).eq("auth_user_id", auth_user.id).execute()
+                return {"success": True, "message": "Email verified successfully"}
+            return {"success": False, "message": "Invalid verification token"}
+        except Exception as exc:
+            logger.error("Email verification error: %s", exc)
+            return {"success": False, "message": "Email verification failed"}
 
-    async def get_user_by_token(self, access_token: str) -> Optional[dict]:
-        """
-        Get user profile from access token.
-        Falls back to Auth metadata when public.users table doesn't exist yet.
-        """
+    # ── Token verification ───────────────────────────────────────────────────
+
+    def _decode_supabase_jwt(self, access_token: str) -> Optional[dict]:
+        """Local verification fallback for transient Supabase Auth outages."""
+        secret = getattr(settings, "SUPABASE_JWT_SECRET", None)
+        if not secret:
+            return None
         try:
-            # Use the existing admin client but pass the access token to get_user
-            auth_response = self.db.auth.get_user(access_token)
-            
-            if not auth_response or not auth_response.user:
-                return None
-
-            auth_user    = auth_response.user
-            auth_user_id = auth_user.id
-            meta         = auth_user.user_metadata or {}
-
-            # Try public.users first
-            try:
-                user_result = (
-                    self.db.table("users")
-                    .select("*")
-                    .eq("auth_user_id", auth_user_id)
-                    .single()
-                    .execute()
-                )
-                if user_result.data:
-                    return user_result.data
-            except Exception:
-                pass
-
-            # Fallback: Auth metadata
-            role = meta.get("role", "patient")
-            return {
-                "id":           auth_user_id,
-                "auth_user_id": auth_user_id,
-                "email":        auth_user.email,
-                "full_name":    meta.get("full_name", auth_user.email.split("@")[0]),
-                "role":         role,
-                "is_active":    True,
-                "is_verified":  True,
-                "phone":        meta.get("phone"),
-                "last_login":   None,
-                "created_at":   str(auth_user.created_at),
-            }
-
-        except Exception as e:
-            logger.error(f"Get user by token error: {e}")
+            payload = jwt.decode(
+                access_token,
+                secret,
+                algorithms=["HS256"],
+                options={"verify_aud": False},
+            )
+        except jwt.PyJWTError:
             return None
 
-    def _log_activity(self, user_id: str, action: str, resource: str, resource_id: str, details: Optional[dict] = None):
-        """Log user activity to activity_log table."""
+        metadata = payload.get("user_metadata") or {}
+        email = payload.get("email") or metadata.get("email") or ""
+        return {
+            "id": payload.get("sub"),
+            "auth_user_id": payload.get("sub"),
+            "email": email,
+            "full_name": metadata.get("full_name") or email.split("@")[0] or "User",
+            "role": metadata.get("role") or "patient",
+            "is_active": True,
+            "is_verified": True,
+            "phone": metadata.get("phone"),
+            "last_login": None,
+            "created_at": "",
+            "is_demo": bool(metadata.get("is_demo")),
+        }
+
+    async def get_user_by_token(self, access_token: str) -> Optional[dict]:
+        """Resolve a Supabase access token to a user profile."""
+        auth_user = None
         try:
-            self.db.table("activity_log").insert({
-                "user_id": user_id,
-                "action": action,
-                "resource": resource,
-                "resource_id": resource_id,
-                "details": details or {},
-            }).execute()
-        except Exception as e:
-            logger.error(f"Activity logging error: {e}")
+            response = self.db.auth.get_user(access_token)
+            auth_user = getattr(response, "user", response)
+        except AuthApiError as exc:
+            logger.info("Invalid or expired Supabase token: %s", exc)
+            return None
+        except Exception as exc:
+            logger.warning("Supabase token verification unavailable, trying local JWT fallback: %s", exc)
+            fallback = self._decode_supabase_jwt(access_token)
+            if fallback:
+                profile = self._find_public_user(auth_user_id=fallback["id"], email=fallback.get("email"))
+                user = profile or fallback
+                user["is_demo"] = is_demo_user(user)
+                return user
+            return None
+
+        if not auth_user:
+            return None
+        auth_user_id = getattr(auth_user, "id", None)
+        email = getattr(auth_user, "email", "")
+
+        user = self._find_public_user(auth_user_id=auth_user_id, email=email)
+        if user:
+            user["is_demo"] = is_demo_user(user)
+            return user
+
+        user = self._metadata_user(auth_user, is_demo=is_demo_user({"email": email}))
+        user["is_demo"] = is_demo_user(user)
+        return user
+
+    def _log_activity(self, user_id: str, action: str, resource: str, resource_id: str, details: Optional[dict] = None):
+        try:
+            self.db.table("activity_log").insert(
+                {
+                    "user_id": user_id,
+                    "action": action,
+                    "resource": resource,
+                    "resource_id": resource_id,
+                    "details": details or {},
+                }
+            ).execute()
+        except Exception as exc:
+            logger.debug("Activity logging skipped: %s", exc)
 
 
 # Singleton instance

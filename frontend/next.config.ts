@@ -18,10 +18,16 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["lucide-react", "date-fns"],
   },
   async rewrites() {
+    const apiBase =
+      process.env.NEXT_PUBLIC_API_URL ||
+      (process.env.NODE_ENV === "production"
+        ? "https://clinic-ai-backend-t38f.onrender.com/api/v1"
+        : "http://localhost:8001/api/v1");
+
     return [
       {
         source: "/api/v1/:path*",
-        destination: `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/:path*`,
+        destination: `${apiBase}/:path*`,
       },
     ];
   },

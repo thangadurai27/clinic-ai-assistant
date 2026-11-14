@@ -9,6 +9,8 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 
 from app.auth import auth_service
+from app.auth.dependencies import get_current_user
+from app.demo.service import demo_public_config
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -91,12 +93,27 @@ async def register(request: RegisterRequest):
     
     if not result["success"]:
         logger.warning(f"Registration failed: {result['message']} for email={request.email}")
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=result["message"]
-        )
-    
+        error_code = result.get("error_code")
+        status_code = status.HTTP_400_BAD_REQUEST
+        if error_code == "email_exists":
+            status_code = status.HTTP_409_CONFLICT
+        elif error_code == "service_unavailable":
+            status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        raise HTTPException(status_code=status_code, detail=result["message"])
+
     return AuthResponse(**result)
+
+
+@router.get("/demo-config")
+async def demo_config() -> dict:
+    """
+    Public demo configuration.
+
+    These credentials are intentionally public and are displayed on the login
+    page. Disable demo mode with DEMO_MODE_ENABLED=false to stop advertising and
+    provisioning the account.
+    """
+    return demo_public_config()
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -108,10 +125,14 @@ async def login(request: LoginRequest):
     )
     
     if not result["success"]:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=result["message"]
-        )
+        error_code = result.get("error_code")
+        if error_code == "service_unavailable":
+            http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+        elif error_code == "inactive":
+            http_status = status.HTTP_403_FORBIDDEN
+        else:
+            http_status = status.HTTP_401_UNAUTHORIZED
+        raise HTTPException(status_code=http_status, detail=result["message"])
     
     return AuthResponse(**result)
 
@@ -207,23 +228,8 @@ async def change_password(
 
 
 @router.get("/me")
-async def get_current_user(authorization: Optional[str] = Header(None)):
+async def get_current_user_profile(user: dict = Depends(get_current_user)):
     """Get current authenticated user."""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authorization header"
-        )
-    
-    token = authorization.replace("Bearer ", "")
-    user = await auth_service.get_user_by_token(token)
-    
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token"
-        )
-    
     return {"success": True, "user": user}
 
 
