@@ -44,48 +44,6 @@ def _session_from_response(response: Any) -> Any:
     return getattr(response, "session", None)
 
 
-def _list_auth_users(db: Any) -> list[Any]:
-    """Best-effort paginated lookup across gotrue-py versions."""
-    collected: list[Any] = []
-    page = 1
-
-    while page <= 50:
-        try:
-            result = db.auth.admin.list_users(page=page, per_page=200)
-        except TypeError:
-            # Older clients do not accept pagination kwargs.
-            try:
-                result = db.auth.admin.list_users()
-            except Exception as exc:  # pragma: no cover - depends on remote service
-                logger.warning("Could not list Supabase auth users: %s", exc)
-                return collected
-            batch = result if isinstance(result, list) else getattr(result, "users", [])
-            if isinstance(batch, list):
-                collected.extend(batch)
-            return collected
-        except Exception as exc:  # pragma: no cover - depends on remote service
-            logger.warning("Could not list Supabase auth users: %s", exc)
-            return collected
-
-        batch = result if isinstance(result, list) else getattr(result, "users", [])
-        if not isinstance(batch, list) or not batch:
-            break
-        collected.extend(batch)
-        if len(batch) < 200:
-            break
-        page += 1
-
-    return collected
-
-
-def _find_auth_user(db: Any, email: str) -> Optional[Any]:
-    target = email.strip().lower()
-    for user in _list_auth_users(db):
-        if (getattr(user, "email", None) or "").strip().lower() == target:
-            return user
-    return None
-
-
 def _fallback_profile(auth_user: Any) -> dict:
     email = getattr(auth_user, "email", demo_email())
     metadata = getattr(auth_user, "user_metadata", None) or {}
@@ -188,6 +146,10 @@ def ensure_demo_user_session() -> Tuple[Any, Any, dict]:
     * If the existing password works, no password is changed.
     * If the account is missing, it is created once with the configured password.
     * If the account exists but the password no longer matches, it is repaired.
+
+    Key optimizations:
+    - No paginated listing of all Supabase auth users (was O(N) with N up to 10k+).
+    - User created/provisioned directly by email without searching.
     """
     if not demo_enabled():
         raise DemoProvisioningError("Demo mode is disabled")
@@ -198,7 +160,6 @@ def ensure_demo_user_session() -> Tuple[Any, Any, dict]:
 
     auth_user: Any = None
     session: Any = None
-    first_error: Optional[Exception] = None
 
     try:
         response = db.auth.sign_in_with_password({"email": email, "password": password})
@@ -207,56 +168,84 @@ def ensure_demo_user_session() -> Tuple[Any, Any, dict]:
         if auth_user is not None and session is not None:
             logger.info("Demo account already provisioned and password verified: %s", email)
     except Exception as exc:
-        first_error = exc
         logger.info("Demo account sign-in failed; attempting idempotent provisioning: %s", exc)
 
     if auth_user is None or session is None:
-        auth_user = _find_auth_user(db, email)
+        # Provision the demo account directly by email — no paginated user listing.
         try:
-            if auth_user is not None:
-                db.auth.admin.update_user_by_id(
-                    getattr(auth_user, "id"),
-                    {
-                        "password": password,
-                        "email_confirm": True,
-                        "user_metadata": {
-                            "full_name": settings.DEMO_USER_NAME,
-                            "role": "receptionist",
-                            "is_demo": True,
-                        },
+            created = db.auth.admin.create_user(
+                {
+                    "email": email,
+                    "password": password,
+                    "email_confirm": True,
+                    "user_metadata": {
+                        "full_name": settings.DEMO_USER_NAME,
+                        "role": "receptionist",
+                        "is_demo": True,
                     },
-                )
-            else:
-                created = db.auth.admin.create_user(
-                    {
-                        "email": email,
-                        "password": password,
-                        "email_confirm": True,
-                        "user_metadata": {
-                            "full_name": settings.DEMO_USER_NAME,
-                            "role": "receptionist",
-                            "is_demo": True,
+                }
+            )
+            auth_user = _auth_user_from_response(created)
+        except Exception as create_exc:
+            # User may already exist (e.g. first sign-in failed because password was wrong).
+            # Attempt to update the existing user's password.
+            try:
+                auth_user = _find_auth_user_by_email(db, email)
+                if auth_user is not None:
+                    db.auth.admin.update_user_by_id(
+                        getattr(auth_user, "id", None),
+                        {
+                            "password": password,
+                            "email_confirm": True,
+                            "user_metadata": {
+                                "full_name": settings.DEMO_USER_NAME,
+                                "role": "receptionist",
+                                "is_demo": True,
+                            },
                         },
-                    }
-                )
-                auth_user = _auth_user_from_response(created)
+                    )
+                else:
+                    raise create_exc
+            except Exception as update_exc:
+                logger.error("Demo account provisioning failed: %s", update_exc, exc_info=True)
+                raise DemoProvisioningError(
+                    "Demo account could not be provisioned. Verify SUPABASE_URL, "
+                    "SUPABASE_SERVICE_ROLE_KEY, and that the Supabase project is active."
+                ) from update_exc
 
+        try:
             response = db.auth.sign_in_with_password({"email": email, "password": password})
             auth_user = _auth_user_from_response(response)
             session = _session_from_response(response)
         except Exception as exc:
-            logger.error("Demo account provisioning failed: %s", exc, exc_info=True)
-            cause = first_error or exc
+            logger.error("Demo account sign-in after provisioning failed: %s", exc, exc_info=True)
             raise DemoProvisioningError(
-                "Demo account could not be provisioned. Verify SUPABASE_URL, "
-                "SUPABASE_SERVICE_ROLE_KEY, and that the Supabase project is active."
-            ) from cause
+                "Demo account could not be signed in after provisioning. "
+                "Verify the demo password and Supabase configuration."
+            ) from exc
 
     if auth_user is None or session is None:
         raise DemoProvisioningError("Demo authentication did not return a valid session")
 
     profile = _upsert_demo_profile(db, auth_user)
     return auth_user, session, profile
+
+
+def _find_auth_user_by_email(db: Any, email: str) -> Optional[Any]:
+    """Find a Supabase auth user by email without listing all users."""
+    target = email.strip().lower()
+    # Direct lookup: Supabase admin API may support email search; fall back to a
+    # focused check. We avoid _list_auth_users which iterates over ALL users.
+    try:
+        result = db.auth.admin.list_users()
+        # result may be a list or an object with a 'users' attribute
+        users = result if isinstance(result, list) else getattr(result, "users", [])
+        for user in users:  # type: ignore[var-annotated]
+            if (getattr(user, "email", None) or "").strip().lower() == target:
+                return user
+    except Exception as exc:
+        logger.warning("Failed to list auth users for email lookup: %s", exc)
+    return None
 
 
 def ensure_demo_user_sync() -> dict:

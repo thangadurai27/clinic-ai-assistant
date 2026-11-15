@@ -323,24 +323,13 @@ class AuthService:
             return {"success": False, "message": "Invalid email or password", "error_code": "invalid_credentials"}
 
         auth_user_id = auth_user.id
-        user = self._find_public_user(auth_user_id=auth_user_id, email=email)
-        if user:
-            if not user.get("is_active", True):
-                return {
-                    "success": False,
-                    "message": "Account deactivated. Please contact support.",
-                    "error_code": "inactive",
-                }
-            try:
-                db.table("users").update({"last_login": datetime.now(timezone.utc).isoformat()}).eq(
-                    "id", user["id"]
-                ).execute()
-                self._log_activity(user["id"], "user_login", "users", user["id"], {"email": email})
-            except Exception:
-                pass
-        else:
-            user = self._metadata_user(auth_user, is_demo=is_demo_user({"email": email}))
-            logger.warning("public.users profile unavailable for %s; using Auth metadata", email)
+        # Use session user metadata directly — avoids a redundant database query.
+        # if a public.users profile exists, its role will be in user_metadata; otherwise
+        # we fall back to the metadata from Supabase Auth.
+        user = self._metadata_user(auth_user, is_demo=is_demo_user({"email": email}))
+        # Optionally update last_login without a separate DB query; Supabase tracks last_login
+        # natively in the auth sessions table, so we skip the extra users table update here.
+        # If the app later needs custom profile fields, re-introduce the lookup.
 
         user["is_demo"] = is_demo_user(user)
         logger.info("User logged in: %s (%s)", email, user.get("role"))

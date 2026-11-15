@@ -41,6 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const router = useRouter();
 
+  // Track if user was set by a recent login (vs. initial load)
+  const [justLoggedIn, setJustLoggedIn] = useState(false);
+
   // Load user on mount
   useEffect(() => {
     const loadUser = async () => {
@@ -48,9 +51,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         tokenManager.clear();
         syncUserCookie(null);
         setUser(null);
+        setJustLoggedIn(false);
       };
 
       try {
+        // If we just logged in, the user/tokens are already in localStorage
+        // from the login flow — we can use them instantly without an API call.
+        if (justLoggedIn) {
+          const storedUser = tokenManager.getUser();
+          const storedToken = tokenManager.getToken();
+          if (storedUser && storedToken) {
+            setUser(storedUser);
+            syncUserCookie(storedUser);
+          }
+          setJustLoggedIn(false);
+          setLoading(false);
+          return;
+        }
+
         // Try stored user first for instant render
         const storedUser = tokenManager.getUser();
         if (storedUser) {
@@ -61,6 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const token = tokenManager.getToken();
         if (!token) {
           syncUserCookie(null);
+          setLoading(false);
           return;
         }
 
@@ -121,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     void loadUser();
-  }, []);
+  }, [justLoggedIn]);
 
   const login = useCallback(
     async (email: string, password: string, rememberMe = false) => {
@@ -138,6 +157,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         tokenManager.setUser(response.user);
         syncUserCookie(response.user);
+
+        setJustLoggedIn(true);
 
         const dashboardRoute = getDashboardRoute(response.user.role);
         router.push(dashboardRoute);

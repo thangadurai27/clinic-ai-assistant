@@ -15,6 +15,9 @@ const FALLBACK_DEMO: DemoConfig = {
   read_only: true,
 };
 
+// Demo config is cached after first fetch — no need to re-fetch on every render.
+let demoConfigCache: DemoConfig | null = null;
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
   height: 52,
@@ -45,25 +48,17 @@ export default function LoginPage() {
   const [showPw,   setShowPw]   = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState("");
-  const [demo,     setDemo]     = useState<DemoConfig>(FALLBACK_DEMO);
   const [demoLoading, setDemoLoading] = useState(false);
 
   const { login } = useAuth();
 
+  /*
+   * Demo config is fetched once on first click and then cached.
+   * Previously it was fetched on every page load, adding unnecessary latency.
+   */
   useEffect(() => {
-    let cancelled = false;
-    authAPI
-      .getDemoConfig()
-      .then((config) => {
-        if (!cancelled) setDemo({ ...FALLBACK_DEMO, ...config });
-      })
-      .catch(() => {
-        // Keep the fallback credentials visible so the demo remains usable
-        // even if the config endpoint is briefly unavailable.
-      });
-    return () => {
-      cancelled = true;
-    };
+    // No-op: demo config is fetched lazily on first demo button click.
+    return;
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -82,11 +77,17 @@ export default function LoginPage() {
   const handleDemoLogin = async () => {
     setError("");
     setDemoLoading(true);
-    setEmail(demo.email);
-    setPassword(demo.password);
     try {
+      // Fetch demo config once and cache it.
+      if (!demoConfigCache) {
+        const config = await authAPI.getDemoConfig();
+        demoConfigCache = config;
+      }
+      const config = demoConfigCache!;
+      setEmail(config.email);
+      setPassword(config.password);
       // Uses the exact same real backend login endpoint and token flow.
-      await login(demo.email, demo.password);
+      await login(config.email, config.password);
     } catch (err: unknown) {
       setError((err as Error).message || "Demo login failed. Please try again.");
     } finally {
@@ -149,7 +150,7 @@ export default function LoginPage() {
           </p>
 
           {/* Public demo access */}
-          {demo.enabled && (
+          {(demoConfigCache?.enabled ?? FALLBACK_DEMO.enabled) && (
             <div
               style={{
                 marginBottom: 24,
@@ -197,9 +198,13 @@ export default function LoginPage() {
                 }}
               >
                 <span style={{ color: "#64748b" }}>Email</span>
-                <code style={{ color: "#e2e8f0" }}>{demo.email}</code>
+                <code style={{ color: "#e2e8f0" }}>
+                  {demoConfigCache?.email ?? FALLBACK_DEMO.email}
+                </code>
                 <span style={{ color: "#64748b" }}>Password</span>
-                <code style={{ color: "#e2e8f0" }}>{demo.password}</code>
+                <code style={{ color: "#e2e8f0" }}>
+                  {demoConfigCache?.password ?? FALLBACK_DEMO.password}
+                </code>
               </div>
               <button
                 type="button"
@@ -274,9 +279,7 @@ export default function LoginPage() {
                   marginBottom: 8,
                 }}
               >
-                <label style={{ ...labelStyle, marginBottom: 0 }}>
-                  Primary Password
-                </label>
+                <label style={{ ...labelStyle, marginBottom: 0 }}>Primary Password</label>
                 <Link
                   href="/forgot-password"
                   style={{
@@ -373,6 +376,42 @@ export default function LoginPage() {
             </button>
           </form>
 
+          <hr
+            style={{
+              border: "none",
+              borderTop: "1px solid rgba(255,255,255,0.1)",
+              margin: "20px 0",
+            }}
+          />
+          <span
+            style={{
+              color: "#64748b",
+              fontSize: 13,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}>
+            Continue with Demo
+          </span>
+          <button
+            type="button"
+            onClick={handleDemoLogin}
+            disabled={loading || demoLoading}
+            style={{
+              width: "100%",
+              height: 46,
+              borderRadius: 10,
+              border: "1px solid rgba(165,180,252,0.55)",
+              background: "rgba(99,102,241,0.18)",
+              color: "#e0e7ff",
+              fontSize: 14,
+              fontWeight: 700,
+              marginTop: 8,
+              cursor: loading || demoLoading ? "not-allowed" : "pointer",
+              opacity: loading || demoLoading ? 0.65 : 1,
+            }}>
+            {demoLoading ? "Entering Demo..." : "Continue with Demo"}
+          </button>
+
           <p
             style={{
               marginTop: 28,
@@ -410,8 +449,7 @@ export default function LoginPage() {
             style={{ color: "#6366f1", textDecoration: "none" }}
           >
             Terms of Service
-          </Link>{" "}
-          and{" "}
+          </Link>{" "}and{" "}
           <Link
             href="/privacy"
             style={{ color: "#6366f1", textDecoration: "none" }}
