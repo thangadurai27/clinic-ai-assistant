@@ -1,6 +1,13 @@
 # KLM AI Clinic Assistant — Final Report: Demo Login & Auth Repair
 
-## Status
+## Status Update (Nov 2026)
+
+- **README redesigned** into a professional project showcase with original SVG assets in `docs/assets/` (`clinic-ai-banner.svg`, `clinic-ai-architecture.svg`, `ai-workflow.svg`). All diagrams are original illustrations, not screenshots.
+- **Tests re-verified on commit `04483f4`:** backend `test_demo_auth.py` → 20 passed; frontend Vitest → 9 passed; `tsc --noEmit` → clean; `npm run lint` → clean; `npm run build` → all routes generated.
+- **Live reachability re-checked:** the Vercel frontend is live. The Render backend (`clinic-ai-backend-t38f.onrender.com`) still returns **HTTP 503 on `/`, `/health`, and `/api/v1/auth/demo-config`**, consistent with the remaining configuration items in section 9 below. The demo is therefore implemented and locally verified, but **not live-verified**.
+- Inaccuracy corrected in the README: the UI is Tailwind + hand-rolled components; **Shadcn UI is not used**.
+
+## Status (original report, below)
 **Code complete and verified locally.** Live demo login cannot succeed until a working Supabase project is restored/replaced and Render/Vercel env vars are updated. No deployment was performed; no credentials are available locally, and the original Supabase project (`kxliehrgflqkhnejbykr`) does not resolve DNS.
 
 ---
